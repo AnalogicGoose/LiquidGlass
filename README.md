@@ -21,8 +21,9 @@ más lento.
 | Entrada | Acción |
 |---|---|
 | Arrastrar con el ratón | Mover un panel |
+| `P` | Cambiar de perfil (Clear → Tinte blanco → Tinte negro) |
 | `1` – `4` | Cambiar el fondo |
-| `T` | Tinte blanco (Regular) / negro (Dark) |
+| `T` | Tinte blanco (Regular) / negro (Dark) sin cambiar el resto de valores |
 | `↑` / `↓` | Elegir parámetro |
 | `←` / `→` | Ajustar el parámetro elegido |
 | `H` | Ocultar/mostrar el panel de parámetros |
@@ -53,19 +54,29 @@ un rayo vertical con `refract()` y se desplaza el muestreo de la escena.
 
 ### Parámetros
 
-Los valores por defecto son los del componente de Figma.
-
 | Parámetro | Uniform | Figma |
 |---|---|---|
-| Refracción | `u_refraction` | Glass → Refraction (0.7) |
-| Profundidad | `u_depth` | Glass → Depth (30) |
-| Dispersión | `u_dispersion` | Glass → Dispersion (0.2) |
-| Frost | `u_frost` | Glass → Frost (16) |
-| Luz | `u_light_intensity` | Glass → Light intensity (0.25) |
-| Ángulo luz | `u_light_angle` | Glass → Light angle (0°) |
-| Splay | `u_splay` | Glass → Splay (0.2) |
+| Refracción | `u_refraction` | Glass → Refraction |
+| Profundidad | `u_depth` | Glass → Depth |
+| Dispersión | `u_dispersion` | Glass → Dispersion |
+| Frost | `u_frost` | Glass → Frost |
+| Luz | `u_light_intensity` | Glass → Light intensity |
+| Ángulo luz | `u_light_angle` | Glass → Light angle |
+| Splay | `u_splay` | Glass → Splay |
 | Tinte | `u_tint` | Multiplicador de la opacidad de los rellenos (1 = Figma) |
 | Sombra | `u_shadow` | Multiplicador de la opacidad de la sombra (1 = Figma) |
+
+### Perfiles
+
+Los valores de cada parámetro se agrupan en perfiles (`PROFILES` en
+`src/main.rs`). Se arranca con **Clear** y se cambia con `P`; al cambiar de
+perfil se sobrescriben los ajustes hechos con las flechas.
+
+| Perfil | Refracción | Profundidad | Dispersión | Frost | Luz | Ángulo | Splay | Tinte | Sombra | Variante |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Clear | 2 | 30 | 0.2 | 6 | 0.25 | 0° | 0.2 | 0.15 | 1 | blanca |
+| Tinte blanco | 2 | 30 | 0.2 | 16 | 0.25 | 0° | 0.2 | 1 | 1 | blanca |
+| Tinte negro | 2 | 30 | 0.2 | 16 | 0.25 | 0° | 0.2 | 1 | 1 | oscura |
 
 Figma no documenta cómo traduce refracción, profundidad, dispersión, ángulo de
 luz y splay a píxeles, así que esa parte es una aproximación. El tinte, la

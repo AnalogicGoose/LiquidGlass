@@ -62,10 +62,10 @@ struct Param {
 }
 
 impl Param {
+    /// El valor inicial lo pone el perfil activo (`GlassProfile::apply`).
     const fn new(
         label: &'static str,
         uniform: &'static str,
-        value: f32,
         min: f32,
         max: f32,
         speed: f32,
@@ -73,13 +73,100 @@ impl Param {
         Self {
             label,
             uniform,
-            value,
+            value: 0.0,
             min,
             max,
             speed,
         }
     }
 }
+
+/// Valores guardados de todos los parámetros del material más la variante del tinte.
+struct GlassProfile {
+    name: &'static str,
+    refraction: f32,
+    depth: f32,
+    dispersion: f32,
+    frost: f32,
+    light_intensity: f32,
+    light_angle: f32,
+    splay: f32,
+    tint: f32,
+    shadow: f32,
+    dark_tint: bool,
+}
+
+impl GlassProfile {
+    fn value(&self, uniform: &str) -> Option<f32> {
+        match uniform {
+            "u_refraction" => Some(self.refraction),
+            "u_depth" => Some(self.depth),
+            "u_dispersion" => Some(self.dispersion),
+            "u_frost" => Some(self.frost),
+            "u_light_intensity" => Some(self.light_intensity),
+            "u_light_angle" => Some(self.light_angle),
+            "u_splay" => Some(self.splay),
+            "u_tint" => Some(self.tint),
+            "u_shadow" => Some(self.shadow),
+            _ => None,
+        }
+    }
+
+    fn apply(&self, params: &mut [Param], dark_tint: &mut bool) {
+        for param in params {
+            if let Some(value) = self.value(param.uniform) {
+                param.value = value;
+            }
+        }
+        *dark_tint = self.dark_tint;
+    }
+}
+
+/// Perfiles que se recorren con `P`. El primero es el inicial.
+const PROFILES: [GlassProfile; 3] = [
+    // Casi transparente: poco frost y un velo blanco muy ligero.
+    GlassProfile {
+        name: "Clear",
+        refraction: 2.0,
+        depth: 30.0,
+        dispersion: 0.2,
+        frost: 6.0,
+        light_intensity: 0.25,
+        light_angle: 0.0,
+        splay: 0.2,
+        tint: 0.15,
+        shadow: 1.0,
+        dark_tint: false,
+    },
+    // "Liquid Glass - Regular" de Figma.
+    GlassProfile {
+        name: "Tinte blanco",
+        refraction: 2.0,
+        depth: 30.0,
+        dispersion: 0.2,
+        frost: 16.0,
+        light_intensity: 0.25,
+        light_angle: 0.0,
+        splay: 0.2,
+        tint: 1.0,
+        shadow: 1.0,
+        dark_tint: false,
+    },
+    // "Liquid Glass - Dark" de Figma.
+    GlassProfile {
+        name: "Tinte negro",
+        refraction: 2.0,
+        depth: 30.0,
+        dispersion: 0.2,
+        frost: 16.0,
+        light_intensity: 0.25,
+        light_angle: 0.0,
+        splay: 0.2,
+        tint: 1.0,
+        shadow: 1.0,
+        dark_tint: true,
+    },
+];
 
 fn window_conf() -> Conf {
     Conf {
@@ -196,8 +283,8 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
     );
 }
 
-fn draw_hud(params: &[Param], selected: usize, background: usize, dark_tint: bool) {
-    let lines = params.len() as f32 + 4.0;
+fn draw_hud(params: &[Param], selected: usize, background: usize, profile: &str, dark_tint: bool) {
+    let lines = params.len() as f32 + 5.0;
     let line_h = 20.0;
     let (x, y) = (16.0, screen_height() - 16.0 - lines * line_h - 12.0);
 
@@ -224,6 +311,7 @@ fn draw_hud(params: &[Param], selected: usize, background: usize, dark_tint: boo
     }
 
     let help = [
+        format!("Perfil {profile}  [P]"),
         format!("Fondo {}/4  [1-4]", background + 1),
         format!("Tinte {}  [T]", if dark_tint { "negro" } else { "blanco" }),
         "Arrastra los paneles con el raton".to_owned(),
@@ -296,24 +384,25 @@ async fn main() {
 
     let mut scene = SceneTargets::new(screen_width(), screen_height());
 
-    // Valores por defecto sacados de Figma: "Liquid Glass - Regular - Large".
     let mut params = [
         // Capa "Glass Effect" (efecto GLASS)
-        Param::new("Refraccion", "u_refraction", 0.7, 0.0, 100.0, 0.5),
-        Param::new("Profundidad", "u_depth", 30.0, 1.0, 120.0, 40.0),
-        Param::new("Dispersion", "u_dispersion", 0.2, 0.0, 1.0, 0.5),
-        Param::new("Frost", "u_frost", 16.0, 0.0, 48.0, 16.0),
-        Param::new("Luz", "u_light_intensity", 0.25, 0.0, 1.0, 0.5),
-        Param::new("Angulo luz", "u_light_angle", 0.0, -180.0, 180.0, 90.0),
-        Param::new("Splay", "u_splay", 0.2, 0.0, 1.0, 0.5),
+        Param::new("Refraccion", "u_refraction", 0.0, 100.0, 0.5),
+        Param::new("Profundidad", "u_depth", 1.0, 120.0, 40.0),
+        Param::new("Dispersion", "u_dispersion", 0.0, 1.0, 0.5),
+        Param::new("Frost", "u_frost", 0.0, 48.0, 16.0),
+        Param::new("Luz", "u_light_intensity", 0.0, 1.0, 0.5),
+        Param::new("Angulo luz", "u_light_angle", -180.0, 180.0, 90.0),
+        Param::new("Splay", "u_splay", 0.0, 1.0, 0.5),
         // Capa "Fill + Shadow": 1 = opacidades de Figma de la variante activa
-        Param::new("Tinte", "u_tint", 1.0, 0.0, 1.0, 0.5),
-        Param::new("Sombra", "u_shadow", 1.0, 0.0, 2.0, 1.0),
+        Param::new("Tinte", "u_tint", 0.0, 1.0, 0.5),
+        Param::new("Sombra", "u_shadow", 0.0, 2.0, 1.0),
     ];
     let mut selected = 0;
     let mut show_hud = true;
     // Variante del tinte: blanca ("Liquid Glass - Regular") u oscura ("Liquid Glass - Dark").
     let mut dark_tint = false;
+    let mut profile = 0;
+    PROFILES[profile].apply(&mut params, &mut dark_tint);
 
     let (w, h) = (screen_width(), screen_height());
     let mut panels = vec![
@@ -355,6 +444,10 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::T) {
             dark_tint = !dark_tint;
+        }
+        if is_key_pressed(KeyCode::P) {
+            profile = (profile + 1) % PROFILES.len();
+            PROFILES[profile].apply(&mut params, &mut dark_tint);
         }
         if is_key_pressed(KeyCode::Up) {
             selected = (selected + params.len() - 1) % params.len();
@@ -433,7 +526,13 @@ async fn main() {
         }
 
         if show_hud {
-            draw_hud(&params, selected, background, dark_tint);
+            draw_hud(
+                &params,
+                selected,
+                background,
+                PROFILES[profile].name,
+                dark_tint,
+            );
         }
 
         next_frame().await;
