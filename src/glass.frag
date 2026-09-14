@@ -12,8 +12,9 @@ precision highp float;
 
 varying vec2 v_px;
 
-uniform sampler2D u_scene;      // escena nítida, resolución completa
-uniform sampler2D u_scene_blur; // escena a media resolución, sigma = frost / 2
+uniform sampler2D u_scene;      // escena + cristales anteriores, resolución completa
+uniform sampler2D u_scene_blur; // stack acumulado a media resolución, sigma = frost / 2
+uniform sampler2D u_stack_mask; // cobertura y transición interna con frost
 uniform vec2 u_resolution;
 
 // Forma
@@ -201,7 +202,15 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     // Refracción: la superficie sube hacia dentro a lo largo de `depth` y el
     // grosor del cristal escala con `refraction`. Un rayo vertical se refracta
     // y se lleva hasta el fondo recorriendo el grosor en ese punto.
-    float thickness = u_refraction * u_depth;
+    // Las superficies superiores detectan cristal ya compuesto. Repetir toda
+    // la óptica produce una lente acuosa; el material apilado reduce de forma
+    // continua refracción, frost y tinte, como una familia de vidrio unificada.
+    // La máscara usa el mismo blur que el color acumulado. De esta manera las
+    // inner shadows del cristal inferior participan en la transición óptica y
+    // no dejan una silueta dura cuando el frost superior es alto.
+    float glass_below_coverage = texture2D(u_stack_mask, screen_uv(v_px)).r;
+    float stack_response = smoothstep(0.0, 1.0, glass_below_coverage);
+    float thickness = u_refraction * u_depth * mix(1.0, 0.12, stack_response);
     float h = surface_height(t);
     float slope = surface_slope(t) * thickness / bezel;
     vec3 normal = normalize(vec3(n2 * slope, 1.0));
@@ -210,16 +219,20 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
 
     // Frost: la escena desenfocada ya viene hecha; con frost muy bajo se mezcla
     // con la nítida para que no se note la media resolución.
-    vec3 col = sample_dispersed(u_scene_blur, v_px, offset);
+    vec3 stacked = sample_dispersed(u_scene, v_px, offset);
+    vec3 blurred = sample_dispersed(u_scene_blur, v_px, offset);
     float frost = clamp(u_frost / 3.0, 0.0, 1.0);
-    if (frost < 1.0) {
-        col = mix(sample_dispersed(u_scene, v_px, offset), col, frost);
-    }
+
+    // `u_scene_blur` is the blurred accumulated stack. Therefore a surface
+    // below remains visible through this one, but receives another diffusion
+    // pass just like stacked macOS glass.
+    vec3 col = mix(stacked, blurred, frost);
 
     // El glass refracta lo que tiene debajo, que ya incluye el tinte de la capa 1.
     // El tinte es uniforme dentro de la forma, así que aplicarlo tras muestrear
     // da el mismo resultado.
-    col = layer_tint(col);
+    vec3 tinted = layer_tint(col);
+    col = mix(tinted, col, 0.78 * stack_response);
 
     // Luz especular: franja suave en el borde hacia el que apunta la luz. Con 0°
     // la luz baja desde arriba y el brillo cae en el borde inferior. Calibrado
@@ -228,7 +241,7 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     vec2 light = vec2(sin(angle), cos(angle));
     float lit = pow(max(dot(n2, light), 0.0), 1.5);
     float band = 1.0 - smoothstep(0.0, bezel * mix(0.2, 1.0, u_splay), dist);
-    col += u_light_intensity * 0.12 * lit * band;
+    col += u_light_intensity * 0.12 * lit * band * mix(1.0, 0.55, stack_response);
 
     // Filo de 1 px en el borde interior, más fuerte en el lado opuesto a la luz.
     // En el tinte blanco queda saturado; se nota en el negro (medido en Figma).

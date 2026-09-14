@@ -83,12 +83,71 @@ luz y splay a píxeles, así que esa parte es una aproximación. El tinte, la
 sombra, el contorno y las franjas de luz de los bordes coinciden con su render
 (diferencia media < 1/255).
 
+## Arquitectura Liquid Glass
+
+La apariencia existente se conserva: los shaders y sus parámetros calibrados
+no se modificaron. Lo que cambió es el límite entre la UI y el renderizador.
+La UI describe superficies semánticamente y un `GlassScene` de ventana las
+compone en orden contra un único backdrop compartido:
+
+```text
+UI → GlassScene → shared sharp backdrop → shared downsampled blur
+   → ping-pong glass stack → GlassSurface geometry/SDF
+   → refraction + frost + tint + edge light → foreground
+```
+
+Cada superficie lee el resultado acumulado de las superficies que están debajo
+y escribe en el otro render target del par. Antes de dibujarla, ese resultado
+acumulado se reduce y desenfoca en los targets reutilizables. Así un cristal
+inferior sigue visible, pero el frost del cristal superior vuelve a difundirlo,
+como el apilado de materiales de macOS, sin capturas ni lecturas desde CPU.
+Un segundo par de targets mantiene la cobertura del vidrio acumulado. Cuando
+una superficie superior encuentra vidrio debajo, reduce gradualmente la doble
+refracción, el doble frost, el tinte y la luz especular. Como esa máscara sigue
+el orden del stack, traer otra superficie al frente cambia automáticamente la
+calidad óptica de la intersección.
+La cobertura y las transiciones de inner shadow también se desenfocan con el
+frost de la superficie superior; por eso no quedan siluetas duras al usar frost
+alto.
+
+`GlassSurface` agrupa `GlassGeometry`, `GlassMaterial`, `GlassOptics`,
+`GlassLighting`, estilo e interacción. `GlassGroup` permite que controles
+relacionados compartan el mismo entorno de escena. Los estilos (`Thin`,
+`Regular`, `Prominent`, `Control`, `Navigation`) son la API que debe usar una
+UI de producto; no debe conocer uniforms ni shaders.
+
+`MacroquadGlassRenderer` es la implementación funcional actual. El límite
+`NativeGlassRenderer` define la integración posterior con un compositor WinUI
+(backdrop/composition brushes) y GTK4 (snapshot/shader o degradación nativa),
+sin transferir detalles de GPU al core de la aplicación. Las implementaciones
+concretas de WinUI y GTK4 requieren sus respectivos crates/proyectos host;
+este PoC no enlaza esos toolkits.
+
+Calidad y accesibilidad se centralizan en `GlassQuality` y los flags de escena:
+en `Low` se elimina refracción y en `Fallback`/reduced transparency se elimina
+frost. `Q` recorre los niveles durante el desarrollo. `D` muestra límites y el
+estado de la escena para inspeccionar coordenadas y el backdrop compartido.
+Para capturas reproducibles del framebuffer, se puede definir
+`LIQUID_GLASS_CAPTURE` con una ruta PNG antes de ejecutar el binario; la demo
+guarda el quinto frame y termina.
+`LIQUID_GLASS_TEST_OVERLAP=1` coloca la cápsula detrás del panel grande para
+comprobar visualmente la composición y refracción glass-on-glass.
+`LIQUID_GLASS_TEST_FROST` permite fijar el frost de esa captura (por ejemplo,
+`30`) para regresiones de blur e inner shadows.
+Para medir el binario release durante un número fijo de frames, define
+`LIQUID_GLASS_BENCHMARK_FRAMES=180`. La salida incluye frame time/FPS y el
+tiempo de envío CPU del pipeline (`render_cpu_ms`). Se puede combinar con
+`LIQUID_GLASS_TEST_OVERLAP=1` y `LIQUID_GLASS_TEST_FROST=30`.
+
 ## Estructura
 
 ```
 src/
-  main.rs      ventana, entrada, render targets y panel de parámetros
+  main.rs      demo, entrada y HUD de diagnóstico
+  glass.rs     API semántica: escena, superficies, grupos, materiales y tokens
+  renderer.rs  límite de renderer, pipeline Macroquad y contratos WinUI/GTK4
   glass.frag   material Liquid Glass (capas "Fill + Shadow" y "Glass Effect")
+  glass_mask.frag  cobertura acumulada para respuesta glass-on-glass
   blur.frag    Gaussiano separable para el frost
 assets/        fondos de prueba
 ```

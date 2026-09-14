@@ -1,26 +1,10 @@
-use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
+mod glass;
+mod renderer;
+
+use crate::glass::*;
+use crate::renderer::MacroquadGlassRenderer;
 use macroquad::prelude::*;
-
-const VERTEX_SHADER: &str = r#"#version 100
-attribute vec3 position;
-attribute vec2 texcoord;
-
-varying vec2 v_px;
-varying vec2 v_uv;
-
-uniform mat4 Model;
-uniform mat4 Projection;
-
-void main() {
-    // Con la cámara por defecto, position ya está en píxeles de pantalla (y hacia abajo).
-    v_px = position.xy;
-    v_uv = texcoord;
-    gl_Position = Projection * Model * vec4(position, 1.0);
-}
-"#;
-
-const GLASS_SHADER: &str = include_str!("glass.frag");
-const BLUR_SHADER: &str = include_str!("blur.frag");
+use std::time::Instant;
 
 const BACKGROUNDS: [&[u8]; 4] = [
     include_bytes!("../assets/image1.jpg"),
@@ -29,142 +13,44 @@ const BACKGROUNDS: [&[u8]; 4] = [
     include_bytes!("../assets/image4.jpg"),
 ];
 
-/// Margen alrededor del panel que también se rasteriza, para que quepa la sombra
-/// (offset de hasta 18 + ~3 sigma de un blur de 48).
-const SHADOW_MARGIN: f32 = 96.0;
-
-struct GlassPanel {
-    center: Vec2,
-    size: Vec2,
-    radius: f32,
-    /// Corner smoothing de Figma: 0 = esquina circular, 0.6 = estilo iOS.
-    smoothing: f32,
-}
-
-impl GlassPanel {
-    fn contains(&self, point: Vec2) -> bool {
-        let half = self.size * 0.5;
-        let r = self.radius.min(half.x).min(half.y);
-        let q = (point - self.center).abs() - half + vec2(r, r);
-        q.max(Vec2::ZERO).length() + q.x.max(q.y).min(0.0) - r <= 0.0
-    }
-}
-
-/// Parámetro del material que se puede ajustar en vivo con el teclado.
 struct Param {
     label: &'static str,
-    uniform: &'static str,
     value: f32,
     min: f32,
     max: f32,
-    /// Unidades por segundo al mantener pulsada la flecha.
     speed: f32,
 }
-
 impl Param {
-    /// El valor inicial lo pone el perfil activo (`GlassProfile::apply`).
-    const fn new(
-        label: &'static str,
-        uniform: &'static str,
-        min: f32,
-        max: f32,
-        speed: f32,
-    ) -> Self {
+    const fn new(label: &'static str, min: f32, max: f32, speed: f32) -> Self {
         Self {
             label,
-            uniform,
-            value: 0.0,
+            value: 0.,
             min,
             max,
             speed,
         }
     }
 }
-
-/// Valores guardados de todos los parámetros del material más la variante del tinte.
 struct GlassProfile {
     name: &'static str,
-    refraction: f32,
-    depth: f32,
-    dispersion: f32,
-    frost: f32,
-    light_intensity: f32,
-    light_angle: f32,
-    splay: f32,
-    tint: f32,
-    shadow: f32,
-    dark_tint: bool,
+    values: [f32; 9],
+    dark: bool,
 }
-
-impl GlassProfile {
-    fn value(&self, uniform: &str) -> Option<f32> {
-        match uniform {
-            "u_refraction" => Some(self.refraction),
-            "u_depth" => Some(self.depth),
-            "u_dispersion" => Some(self.dispersion),
-            "u_frost" => Some(self.frost),
-            "u_light_intensity" => Some(self.light_intensity),
-            "u_light_angle" => Some(self.light_angle),
-            "u_splay" => Some(self.splay),
-            "u_tint" => Some(self.tint),
-            "u_shadow" => Some(self.shadow),
-            _ => None,
-        }
-    }
-
-    fn apply(&self, params: &mut [Param], dark_tint: &mut bool) {
-        for param in params {
-            if let Some(value) = self.value(param.uniform) {
-                param.value = value;
-            }
-        }
-        *dark_tint = self.dark_tint;
-    }
-}
-
-/// Perfiles que se recorren con `P`. El primero es el inicial.
 const PROFILES: [GlassProfile; 3] = [
-    // Casi transparente: poco frost y un velo blanco muy ligero.
     GlassProfile {
         name: "Clear",
-        refraction: 2.0,
-        depth: 30.0,
-        dispersion: 0.2,
-        frost: 6.0,
-        light_intensity: 0.25,
-        light_angle: 0.0,
-        splay: 0.2,
-        tint: 0.15,
-        shadow: 1.0,
-        dark_tint: false,
+        values: [2., 30., 0.2, 6., 0.25, 0., 0.2, 0.15, 1.],
+        dark: false,
     },
-    // "Liquid Glass - Regular" de Figma.
     GlassProfile {
         name: "Tinte blanco",
-        refraction: 2.0,
-        depth: 30.0,
-        dispersion: 0.2,
-        frost: 16.0,
-        light_intensity: 0.25,
-        light_angle: 0.0,
-        splay: 0.2,
-        tint: 1.0,
-        shadow: 1.0,
-        dark_tint: false,
+        values: [2., 30., 0.2, 16., 0.25, 0., 0.2, 1., 1.],
+        dark: false,
     },
-    // "Liquid Glass - Dark" de Figma.
     GlassProfile {
         name: "Tinte negro",
-        refraction: 2.0,
-        depth: 30.0,
-        dispersion: 0.2,
-        frost: 16.0,
-        light_intensity: 0.25,
-        light_angle: 0.0,
-        splay: 0.2,
-        tint: 1.0,
-        shadow: 1.0,
-        dark_tint: true,
+        values: [2., 30., 0.2, 16., 0.25, 0., 0.2, 1., 1.],
+        dark: true,
     },
 ];
 
@@ -177,100 +63,20 @@ fn window_conf() -> Conf {
         ..Default::default()
     }
 }
-
 fn load_background(bytes: &[u8]) -> Texture2D {
-    let img = image::load_from_memory(bytes)
+    let image = image::load_from_memory(bytes)
         .expect("No se pudo decodificar la imagen de fondo")
         .to_rgba8();
-
     let texture = Texture2D::from_image(&Image {
-        width: img.width() as u16,
-        height: img.height() as u16,
-        bytes: img.into_raw(),
+        width: image.width() as u16,
+        height: image.height() as u16,
+        bytes: image.into_raw(),
     });
     texture.set_filter(FilterMode::Linear);
     texture
 }
-
-fn new_target(width: u32, height: u32) -> RenderTarget {
-    let target = render_target(width.max(1), height.max(1));
-    target.texture.set_filter(FilterMode::Linear);
-    target
-}
-
-/// Render targets de la escena: nítida a resolución completa y dos a media
-/// resolución para hacer el Gaussiano separable (horizontal en `blur_tmp`,
-/// vertical de vuelta en `blur`).
-struct SceneTargets {
-    sharp: RenderTarget,
-    blur: RenderTarget,
-    blur_tmp: RenderTarget,
-}
-
-impl SceneTargets {
-    fn new(width: f32, height: f32) -> Self {
-        let (w, h) = (width as u32, height as u32);
-        Self {
-            sharp: new_target(w, h),
-            blur: new_target(w / 2, h / 2),
-            blur_tmp: new_target(w / 2, h / 2),
-        }
-    }
-}
-
-/// Activa una cámara que dibuja en `target` con coordenadas en píxeles del target.
-fn set_target_camera(target: &RenderTarget) {
-    let size = target.texture.size();
-    let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, size.x, size.y));
-    camera.render_target = Some(target.clone());
-    set_camera(&camera);
-}
-
-/// Copia `source` sobre todo el target activo. Las texturas de render target
-/// quedan invertidas en Y, de ahí el `flip_y`.
-fn blit(source: &Texture2D, dest_size: Vec2) {
-    draw_texture_ex(
-        source,
-        0.0,
-        0.0,
-        WHITE,
-        DrawTextureParams {
-            dest_size: Some(dest_size),
-            flip_y: true,
-            ..Default::default()
-        },
-    );
-}
-
-/// Desenfoca `targets.sharp` y deja el resultado en `targets.blur`.
-fn blur_scene(targets: &SceneTargets, material: &Material, sigma_px: f32) {
-    let half = targets.blur.texture.size();
-
-    // Reducir a la mitad con filtrado lineal promedia bloques de 2x2.
-    set_target_camera(&targets.blur);
-    blit(&targets.sharp.texture, half);
-
-    // El sigma llega en píxeles de pantalla; aquí trabajamos a media resolución.
-    material.set_uniform("u_texel", 1.0 / half);
-    material.set_uniform("u_sigma", sigma_px * 0.5);
-
-    for (source, dest, direction) in [
-        (&targets.blur, &targets.blur_tmp, vec2(1.0, 0.0)),
-        (&targets.blur_tmp, &targets.blur, vec2(0.0, 1.0)),
-    ] {
-        set_target_camera(dest);
-        material.set_uniform("u_direction", direction);
-        gl_use_material(material);
-        blit(&source.texture, half);
-        gl_use_default_material();
-    }
-}
-
-/// Dibuja la textura cubriendo toda la pantalla sin deformarla (como `object-fit: cover`).
 fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
-    let scale = (width / texture.width()).max(height / texture.height());
-    let size = texture.size() * scale;
-
+    let size = texture.size() * (width / texture.width()).max(height / texture.height());
     draw_texture_ex(
         texture,
         (width - size.x) * 0.5,
@@ -282,152 +88,175 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
         },
     );
 }
+fn apply_profile(profile: &GlassProfile, params: &mut [Param], dark: &mut bool) {
+    for (param, value) in params.iter_mut().zip(profile.values) {
+        param.value = value;
+    }
+    *dark = profile.dark;
+}
+fn apply_tuning(scene: &mut GlassScene, params: &[Param], dark: bool) {
+    for s in &mut scene.surfaces {
+        s.optics.refraction_strength = params[0].value;
+        s.optics.depth = params[1].value;
+        s.optics.dispersion = params[2].value;
+        s.material.frost_radius = params[3].value;
+        s.lighting.intensity = params[4].value;
+        s.lighting.angle_degrees = params[5].value;
+        s.lighting.splay = params[6].value;
+        s.material.tint_opacity = params[7].value;
+        s.material.dark_tint = dark;
+        s.lighting.shadow_strength = params[8].value;
+    }
+}
 
-fn draw_hud(params: &[Param], selected: usize, background: usize, profile: &str, dark_tint: bool) {
-    let lines = params.len() as f32 + 5.0;
-    let line_h = 20.0;
-    let (x, y) = (16.0, screen_height() - 16.0 - lines * line_h - 12.0);
-
+fn draw_hud(
+    params: &[Param],
+    selected: usize,
+    background: usize,
+    profile: &str,
+    dark: bool,
+    scene: &GlassScene,
+) {
+    let lines = params.len() as f32 + 7.;
+    let line_h = 20.;
+    let (x, y) = (16., screen_height() - 16. - lines * line_h - 12.);
     draw_rectangle(
         x,
         y,
-        290.0,
-        lines * line_h + 12.0,
-        Color::new(0.0, 0.0, 0.0, 0.45),
+        310.,
+        lines * line_h + 12.,
+        Color::new(0., 0., 0., 0.45),
     );
-
-    let mut ty = y + 22.0;
+    let mut ty = y + 22.;
     for (i, p) in params.iter().enumerate() {
-        let color = if i == selected { YELLOW } else { WHITE };
-        let marker = if i == selected { ">" } else { " " };
         draw_text(
-            format!("{marker} {:<12} {:>7.2}", p.label, p.value),
-            x + 8.0,
+            format!(
+                "{} {:<12} {:>7.2}",
+                if i == selected { ">" } else { " " },
+                p.label,
+                p.value
+            ),
+            x + 8.,
             ty,
-            20.0,
-            color,
+            20.,
+            if i == selected { YELLOW } else { WHITE },
         );
         ty += line_h;
     }
-
-    let help = [
+    for line in [
         format!("Perfil {profile}  [P]"),
         format!("Fondo {}/4  [1-4]", background + 1),
-        format!("Tinte {}  [T]", if dark_tint { "negro" } else { "blanco" }),
+        format!("Tinte {}  [T]", if dark { "negro" } else { "blanco" }),
+        format!("Calidad {:?}  [Q]", scene.quality),
         "Arrastra los paneles con el raton".to_owned(),
         "Flechas: elegir / ajustar  H: ocultar".to_owned(),
-    ];
-    for line in help {
-        draw_text(&line, x + 8.0, ty, 18.0, LIGHTGRAY);
+        "D: debug de escena".to_owned(),
+    ] {
+        draw_text(&line, x + 8., ty, 18., LIGHTGRAY);
         ty += line_h;
     }
+}
+fn draw_debug(scene: &GlassScene) {
+    for (z, s) in scene.surfaces.iter().enumerate() {
+        let g = s.geometry;
+        let tl = g.center() - g.size() * 0.5;
+        draw_rectangle_lines(tl.x, tl.y, g.size().x, g.size().y, 1., MAGENTA);
+        draw_circle(g.center().x, g.center().y, 3., YELLOW);
+        draw_text(
+            &format!("id:{} z:{} {:?}", s.id, z, s.style),
+            tl.x + 8.0,
+            tl.y + 20.0,
+            18.0,
+            YELLOW,
+        );
+    }
+    draw_text(
+        &format!(
+            "GlassScene: frame {} | shared backdrop | {} surfaces | {:?}",
+            scene.frame,
+            scene.surfaces.len(),
+            scene.quality
+        ),
+        16.,
+        28.,
+        20.,
+        YELLOW,
+    );
 }
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let glass_material = load_material(
-        ShaderSource::Glsl {
-            vertex: VERTEX_SHADER,
-            fragment: GLASS_SHADER,
-        },
-        MaterialParams {
-            pipeline_params: PipelineParams {
-                color_blend: Some(BlendState::new(
-                    Equation::Add,
-                    BlendFactor::Value(BlendValue::SourceAlpha),
-                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
-                )),
-                ..Default::default()
-            },
-            uniforms: vec![
-                UniformDesc::new("u_resolution", UniformType::Float2),
-                UniformDesc::new("u_center", UniformType::Float2),
-                UniformDesc::new("u_size", UniformType::Float2),
-                UniformDesc::new("u_radius", UniformType::Float1),
-                UniformDesc::new("u_smoothing", UniformType::Float1),
-                UniformDesc::new("u_refraction", UniformType::Float1),
-                UniformDesc::new("u_depth", UniformType::Float1),
-                UniformDesc::new("u_dispersion", UniformType::Float1),
-                UniformDesc::new("u_frost", UniformType::Float1),
-                UniformDesc::new("u_light_intensity", UniformType::Float1),
-                UniformDesc::new("u_light_angle", UniformType::Float1),
-                UniformDesc::new("u_splay", UniformType::Float1),
-                UniformDesc::new("u_tint_mode", UniformType::Float1),
-                UniformDesc::new("u_tint", UniformType::Float1),
-                UniformDesc::new("u_shadow", UniformType::Float1),
-            ],
-            textures: vec!["u_scene".to_owned(), "u_scene_blur".to_owned()],
-        },
-    )
-    .unwrap();
-
-    let blur_material = load_material(
-        ShaderSource::Glsl {
-            vertex: VERTEX_SHADER,
-            fragment: BLUR_SHADER,
-        },
-        MaterialParams {
-            uniforms: vec![
-                UniformDesc::new("u_texel", UniformType::Float2),
-                UniformDesc::new("u_direction", UniformType::Float2),
-                UniformDesc::new("u_sigma", UniformType::Float1),
-            ],
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    // Decodificar JPEGs grandes es lento en debug: se cargan bajo demanda.
+    let mut capture_path = std::env::var_os("LIQUID_GLASS_CAPTURE").map(std::path::PathBuf::from);
+    let benchmark_frames = std::env::var("LIQUID_GLASS_BENCHMARK_FRAMES")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|frames| *frames >= 3);
+    let mut frame_samples = Vec::new();
+    let mut render_samples = Vec::new();
+    let mut renderer = MacroquadGlassRenderer::new(screen_width(), screen_height());
     let mut backgrounds: [Option<Texture2D>; 4] = Default::default();
     let mut background = 0;
-    backgrounds[background] = Some(load_background(BACKGROUNDS[background]));
-
-    let mut scene = SceneTargets::new(screen_width(), screen_height());
-
-    let mut params = [
-        // Capa "Glass Effect" (efecto GLASS)
-        Param::new("Refraccion", "u_refraction", 0.0, 100.0, 0.5),
-        Param::new("Profundidad", "u_depth", 1.0, 120.0, 40.0),
-        Param::new("Dispersion", "u_dispersion", 0.0, 1.0, 0.5),
-        Param::new("Frost", "u_frost", 0.0, 48.0, 16.0),
-        Param::new("Luz", "u_light_intensity", 0.0, 1.0, 0.5),
-        Param::new("Angulo luz", "u_light_angle", -180.0, 180.0, 90.0),
-        Param::new("Splay", "u_splay", 0.0, 1.0, 0.5),
-        // Capa "Fill + Shadow": 1 = opacidades de Figma de la variante activa
-        Param::new("Tinte", "u_tint", 0.0, 1.0, 0.5),
-        Param::new("Sombra", "u_shadow", 0.0, 2.0, 1.0),
-    ];
-    let mut selected = 0;
-    let mut show_hud = true;
-    // Variante del tinte: blanca ("Liquid Glass - Regular") u oscura ("Liquid Glass - Dark").
-    let mut dark_tint = false;
-    let mut profile = 0;
-    PROFILES[profile].apply(&mut params, &mut dark_tint);
-
+    backgrounds[0] = Some(load_background(BACKGROUNDS[0]));
+    let (material, optics, lighting) = preset(GlassStyle::Regular, false);
     let (w, h) = (screen_width(), screen_height());
-    let mut panels = vec![
-        // Mismo tamaño y esquinas que el frame de Figma.
-        GlassPanel {
-            center: vec2(w * 0.5, h * 0.4),
-            size: vec2(640.0, 498.0),
-            radius: 34.0,
-            smoothing: 0.6,
+    let mut scene = GlassScene::new(vec![
+        GlassSurface {
+            id: 1,
+            geometry: GlassGeometry::RoundedRect {
+                center: vec2(w * 0.5, h * 0.4),
+                size: vec2(640., 498.),
+                radius: 34.,
+                smoothing: 0.6,
+            },
+            material,
+            optics,
+            lighting,
+            interaction: GlassInteraction::Idle,
+            style: GlassStyle::Regular,
         },
-        GlassPanel {
-            center: vec2(w * 0.5, h * 0.86),
-            size: vec2(380.0, 88.0),
-            radius: 44.0,
-            // Cápsula: con radio = media altura el smoothing la volvería más cuadrada.
-            smoothing: 0.0,
+        GlassSurface {
+            id: 2,
+            geometry: GlassGeometry::RoundedRect {
+                center: vec2(w * 0.5, h * 0.86),
+                size: vec2(380., 88.),
+                radius: 44.,
+                smoothing: 0.,
+            },
+            material,
+            optics,
+            lighting,
+            interaction: GlassInteraction::Idle,
+            style: GlassStyle::Control,
         },
+    ]);
+    if std::env::var_os("LIQUID_GLASS_TEST_OVERLAP").is_some() {
+        scene.surfaces[1].geometry = scene.surfaces[1]
+            .geometry
+            .with_center(vec2(w * 0.5, h * 0.68));
+        scene.surfaces.swap(0, 1);
+    }
+    let mut params = [
+        Param::new("Refraccion", 0., 100., 0.5),
+        Param::new("Profundidad", 1., 120., 40.),
+        Param::new("Dispersion", 0., 1., 0.5),
+        Param::new("Frost", 0., 48., 16.),
+        Param::new("Luz", 0., 1., 0.5),
+        Param::new("Angulo luz", -180., 180., 90.),
+        Param::new("Splay", 0., 1., 0.5),
+        Param::new("Tinte", 0., 1., 0.5),
+        Param::new("Sombra", 0., 2., 1.),
     ];
-    let mut drag: Option<Vec2> = None;
-
+    let (mut selected, mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
+        (0usize, true, false, false, 0usize, None::<Vec2>);
+    apply_profile(&PROFILES[profile], &mut params, &mut dark);
+    if let Ok(value) = std::env::var("LIQUID_GLASS_TEST_FROST")
+        && let Ok(frost) = value.parse::<f32>()
+    {
+        params[3].value = frost.clamp(params[3].min, params[3].max);
+    }
     loop {
-        let (w, h) = (screen_width(), screen_height());
-        let dt = get_frame_time();
-
-        // ---- Entrada ----
+        let (w, h, dt) = (screen_width(), screen_height(), get_frame_time());
+        renderer.resize_if_needed(w, h);
         for (i, key) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4]
             .into_iter()
             .enumerate()
@@ -442,12 +271,24 @@ async fn main() {
         if is_key_pressed(KeyCode::H) {
             show_hud = !show_hud;
         }
+        if is_key_pressed(KeyCode::D) {
+            show_debug = !show_debug;
+        }
         if is_key_pressed(KeyCode::T) {
-            dark_tint = !dark_tint;
+            dark = !dark;
         }
         if is_key_pressed(KeyCode::P) {
             profile = (profile + 1) % PROFILES.len();
-            PROFILES[profile].apply(&mut params, &mut dark_tint);
+            apply_profile(&PROFILES[profile], &mut params, &mut dark);
+        }
+        if is_key_pressed(KeyCode::Q) {
+            scene.quality = match scene.quality {
+                GlassQuality::Ultra => GlassQuality::High,
+                GlassQuality::High => GlassQuality::Medium,
+                GlassQuality::Medium => GlassQuality::Low,
+                GlassQuality::Low => GlassQuality::Fallback,
+                GlassQuality::Fallback => GlassQuality::Ultra,
+            };
         }
         if is_key_pressed(KeyCode::Up) {
             selected = (selected + params.len() - 1) % params.len();
@@ -455,86 +296,90 @@ async fn main() {
         if is_key_pressed(KeyCode::Down) {
             selected = (selected + 1) % params.len();
         }
-        let param = &mut params[selected];
         if is_key_down(KeyCode::Right) {
-            param.value = (param.value + param.speed * dt).min(param.max);
+            let p = &mut params[selected];
+            p.value = (p.value + p.speed * dt).min(p.max);
         }
         if is_key_down(KeyCode::Left) {
-            param.value = (param.value - param.speed * dt).max(param.min);
+            let p = &mut params[selected];
+            p.value = (p.value - p.speed * dt).max(p.min);
         }
-
-        // El panel que se agarra pasa al final del Vec para dibujarse encima.
         let mouse = Vec2::from(mouse_position());
         if is_mouse_button_pressed(MouseButton::Left)
-            && let Some(i) = panels.iter().rposition(|panel| panel.contains(mouse))
+            && let Some(index) = scene.surface_at(mouse)
         {
-            let panel = panels.remove(i);
-            drag = Some(panel.center - mouse);
-            panels.push(panel);
+            let surface = scene.surfaces[index];
+            drag = Some(surface.geometry.center() - mouse);
+            scene.bring_to_front(index);
         }
         if is_mouse_button_released(MouseButton::Left) {
             drag = None;
         }
-        if let (Some(grab), Some(panel)) = (drag, panels.last_mut()) {
-            panel.center = mouse + grab;
+        if let (Some(grab), Some(surface)) = (drag, scene.surfaces.last_mut()) {
+            surface.geometry = surface.geometry.with_center(mouse + grab);
+            surface.interaction = GlassInteraction::Dragged;
+        } else {
+            for s in &mut scene.surfaces {
+                s.interaction = GlassInteraction::Idle;
+            }
         }
-
-        // ---- 1. Escena (lo que hay detrás del cristal) en render targets ----
-        if scene.sharp.texture.size() != vec2(w, h) {
-            scene = SceneTargets::new(w, h);
+        apply_tuning(&mut scene, &params, dark);
+        scene.frame += 1;
+        let render_start = Instant::now();
+        renderer.begin_backdrop(|| {
+            if let Some(texture) = &backgrounds[background] {
+                draw_cover(texture, w, h);
+            }
+        });
+        renderer.render(&scene, w, h);
+        if scene.frame > 2 {
+            frame_samples.push(dt * 1000.0);
+            render_samples.push(render_start.elapsed().as_secs_f32() * 1000.0);
         }
-
-        set_target_camera(&scene.sharp);
-        clear_background(BLACK);
-        if let Some(texture) = &backgrounds[background] {
-            draw_cover(texture, w, h);
+        if show_debug {
+            draw_debug(&scene);
         }
-
-        // El frost de Figma es un radio de blur: sigma = frost / 2.
-        let frost = params
-            .iter()
-            .find(|p| p.uniform == "u_frost")
-            .map_or(0.0, |p| p.value);
-        blur_scene(&scene, &blur_material, frost * 0.5);
-
-        // ---- 2. Pantalla: escena + paneles de cristal ----
-        set_default_camera();
-        clear_background(BLACK);
-        blit(&scene.sharp.texture, vec2(w, h));
-
-        glass_material.set_texture("u_scene", scene.sharp.texture.clone());
-        glass_material.set_texture("u_scene_blur", scene.blur.texture.clone());
-        glass_material.set_uniform("u_resolution", vec2(w, h));
-        glass_material.set_uniform("u_tint_mode", if dark_tint { 1.0f32 } else { 0.0f32 });
-        for p in &params {
-            glass_material.set_uniform(p.uniform, p.value);
-        }
-
-        for panel in &panels {
-            glass_material.set_uniform("u_center", panel.center);
-            glass_material.set_uniform("u_size", panel.size);
-            glass_material.set_uniform("u_radius", panel.radius);
-            glass_material.set_uniform("u_smoothing", panel.smoothing);
-
-            // macroquad guarda los uniforms por draw call; cambiar de material entre
-            // paneles evita que se agrupen en un solo batch con los valores del último.
-            gl_use_material(&glass_material);
-            let top_left = panel.center - panel.size * 0.5 - SHADOW_MARGIN;
-            let quad = panel.size + SHADOW_MARGIN * 2.0;
-            draw_rectangle(top_left.x, top_left.y, quad.x, quad.y, WHITE);
-            gl_use_default_material();
-        }
-
         if show_hud {
             draw_hud(
                 &params,
                 selected,
                 background,
                 PROFILES[profile].name,
-                dark_tint,
+                dark,
+                &scene,
             );
         }
-
+        if scene.frame >= 5
+            && let Some(path) = capture_path.take()
+        {
+            get_screen_data().export_png(&path.to_string_lossy());
+            break;
+        }
+        if let Some(frame_count) = benchmark_frames
+            && scene.frame >= frame_count
+        {
+            let stats = |samples: &mut Vec<f32>| {
+                samples.sort_by(f32::total_cmp);
+                let average = samples.iter().sum::<f32>() / samples.len() as f32;
+                let p95 = samples[((samples.len() - 1) * 95) / 100];
+                let max = *samples.last().unwrap_or(&0.0);
+                (average, p95, max)
+            };
+            let (frame_avg, frame_p95, frame_max) = stats(&mut frame_samples);
+            let (render_avg, render_p95, render_max) = stats(&mut render_samples);
+            println!(
+                "BENCHMARK frames={} frame_ms(avg/p95/max)={:.3}/{:.3}/{:.3} fps={:.2} render_cpu_ms(avg/p95/max)={:.3}/{:.3}/{:.3}",
+                frame_count,
+                frame_avg,
+                frame_p95,
+                frame_max,
+                1000.0 / frame_avg.max(0.001),
+                render_avg,
+                render_p95,
+                render_max,
+            );
+            break;
+        }
         next_frame().await;
     }
 }
