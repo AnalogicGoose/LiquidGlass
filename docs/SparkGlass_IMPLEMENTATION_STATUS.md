@@ -225,7 +225,12 @@ piece for any Phase 8 (advanced fidelity) work:
   defaults exactly on 5 of 7 comparable parameters. Two values
   (`Refraction: 70`, `Opacity: 25`) don't transplant directly — see that
   directory's `README.md` for why, and don't act on those two numbers
-  without resolving the ambiguity first.
+  without resolving the ambiguity first. That README also has a real
+  composited screenshot (not an isolated component preview) showing a
+  `Liquid Glass - Dark` bar over real album art — it's visibly more
+  frosted/darkened than our demo's "Clear" profile produces, which is real
+  evidence our demo currently applies one flat profile to every surface
+  regardless of `GlassStyle` rather than a specific wrong constant.
 - `references/apple-liquid-glass/` — real macOS screenshots (Apple Music,
   System Settings) showing actual Liquid Glass in production use. Useful
   for structure and edge treatment, not for numeric calibration — see that
