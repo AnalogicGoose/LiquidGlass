@@ -14,7 +14,7 @@
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
 | 6 | Windows (WinUI 3 + ANGLE) integration | Not started — no Windows environment available to build or verify against |
 | 7 | GoosicReborn integration | Not started |
-| 8 | Apple Material Fidelity | **Started** — 8.1 (Material Style System) in progress, see below |
+| 8 | Apple Material Fidelity | **Started** — 8.1 in progress, 8.2 tooling built (calibration itself pending human review), see below |
 | 9 | Container interaction + motion | Not started (blocked on container/grouping semantics, which don't exist in the renderer yet) |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
@@ -252,6 +252,37 @@ only frost/tint were. The container/interaction fields Phase 9 will need,
 and any per-style tuning beyond frost/tint (e.g. distinct highlight
 strength or edge response per style, per the roadmap's Phase 8.1 "tune per
 style" list), remain undone.
+
+---
+
+## Phase 8.2 — Optical Calibration (tooling built, calibration itself not done)
+
+The roadmap is explicit about method here: *"reference scene + parameter
+sweep + side-by-side comparison + human visual evaluation. Do not rely on
+one developer's memory."* That's a human step by design — so what's done is
+the tooling that step needs, not a calibration decision.
+
+`examples/parameter_sweep.rs` renders the same 640×498 panel over
+`assets/image1.jpg` used by the Figma "Regular - Large" reference, sweeping
+one parameter at a time across several values, writing each to
+`tests/parameter_sweep/<parameter>/<value>.png` (gitignored — exploratory
+candidates, not golden references). Currently sweeps the two parameters
+flagged unresolved in `docs/references/figma-liquid-glass/README.md`:
+`refraction_strength` (1 through 24 — deliberately excludes Figma's raw
+`70`, since that README already shows the math for why that's implausible
+as a direct value) and `tint_opacity` (0.15 through 1.0, bracketing both
+current buckets and Figma's stored `Opacity: 25`). Spot-checked the output:
+the sweep produces clearly, usefully different results per value (low
+refraction is a subtle, nearly flat edge; high values show a pronounced 3D
+lens edge with visible chromatic fringing) — confirmed it's actually useful
+for comparison, not just technically running.
+
+**Not done:** nobody has actually run the side-by-side comparison and
+picked values yet. Run `cargo run --example parameter_sweep`, look at the
+output next to `docs/references/figma-liquid-glass/` (especially
+`liquid_glass_regular_large_640x498.png` and the composited
+`goosic_mockup_composited_dark_bar.jpg`), and pick — that's the actual
+Phase 8.2 work, and it's still open.
 
 ---
 
