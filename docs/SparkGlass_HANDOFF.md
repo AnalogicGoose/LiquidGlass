@@ -96,47 +96,74 @@ resuming heavy GUI-window/screenshot activity, since a new session has no
 way to know if that context still applies (a fresh session has no memory of
 this exchange) or whether the user's situation has changed since.
 
+## Who owns what, architecturally
+
+**GPT is the project's architect/orchestrator** — it wrote
+`SparkGlass_MASTER_ARCHITECTURE.md` originally, and it wrote
+`SparkGlass_ROADMAP.md` (in a separate ChatGPT conversation the user ran
+alongside this session, seeded with this session's Figma findings and a
+question list — see git history around the `SparkGlass_ROADMAP.md` commit).
+Claude's role here has been implementation/verification: building what the
+architecture calls for, and pressure-testing it (the render-target bug, the
+GL-state experiment, the Figma calibration pull) rather than designing it.
+If a roadmap/architecture question comes up that's really a product/design
+decision rather than an implementation one, the right move is routing it
+back through the user to GPT, the same way this session did for Phase 8 —
+not improvising an answer solo.
+
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`b0e5838` as of this
+1. **Nothing is currently broken** — the last commit (`a14a6bf` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
    from any angle below.
-1a. **The Phase 8 blocker noted earlier this session is now partially
-   resolved.** `docs/references/` has real calibration material now: the
-   actual Figma file the shader constants were almost certainly calibrated
-   against originally (same source photo as `assets/image1.jpg`, a component
-   literally named and sized to match our demo scenes exactly), plus real
-   macOS screenshots. Read `docs/references/figma-liquid-glass/README.md`
-   before touching any shader constant — it has the exact numbers pulled via
-   `get_variable_defs`, which 5 of 7 already match, and explains why the
-   other 2 (`Refraction: 70`, `Opacity: 25`) should NOT be transplanted
-   directly without more investigation. The Figma MCP server needs
-   authentication each new session (`mcp__plugin_figma_figma__authenticate`)
-   and `get_design_context` doesn't work here (needs Figma desktop, not
-   available on this Linux/browser-only setup) — use `get_metadata` /
-   `get_screenshot` / `get_variable_defs` instead, which all work fine.
-2. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
+2. **`docs/SparkGlass_ROADMAP.md` is now the authoritative phase plan from
+   Phase 8 onward** — it supersedes the master doc's old Phase 8 section
+   (which now says so explicitly). Phase 8.1 (Material Style System) is
+   started: `preset()` in `src/glass.rs` now gives `Control`/`Thin` styles
+   different frost/tint than `Regular`/`Navigation`, and every example
+   applies each surface's *own* style instead of one profile stamped on
+   everything. The rest of Phase 8.1's "tune per style" list (transmission,
+   highlight strength, edge response, chromatic behavior, shadow) is
+   untouched — those still don't vary by style, and there's no reference
+   evidence yet for what they should be per-style specifically. Phase 8.2
+   (Optical Calibration) is exactly the Refraction/Opacity mystery from
+   `docs/references/figma-liquid-glass/README.md` — still unresolved.
+3. **Figma reference material exists** at `docs/references/`: the actual
+   file the shader constants were almost certainly calibrated against
+   (same source photo as `assets/image1.jpg`, components named/sized to
+   match our demo scenes exactly), including one real *composited* render
+   (`goosic_mockup_composited_dark_bar.jpg` — glass over real album art, not
+   an isolated component preview) that's more informative than the isolated
+   ones. Read `docs/references/figma-liquid-glass/README.md` before
+   touching any shader constant. The Figma MCP server needs authentication
+   each new session (`mcp__plugin_figma_figma__authenticate`) and
+   `get_design_context` doesn't work here (needs Figma desktop, unavailable
+   on this Linux/browser-only setup) — `get_metadata`/`get_screenshot`/
+   `get_variable_defs` all work fine without it. Two lessons learned pulling
+   it, documented in that README: composited (not isolated) screenshots need
+   a shared parent frame in the Figma file, and `get_variable_defs` only
+   returns locally-overridden values, never the full inherited set.
+4. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
    found and fixed: `GlassScene::new` was fabricating a hardcoded demo
-   `GlassGroup` nothing ever read. Go through the rest of the master doc's
+   `GlassGroup` nothing ever read. Go through the rest of the roadmap's
    Phase 1 checklist (Scene / Backdrop / Container / GlassElement / Material
    / TextureHandle / RenderTarget) the same way — grep for who actually
    reads each field before trusting a doc comment about it.
-3. ~~Automate the regression checks~~ — done, see `scripts/verify_backends.sh`.
-4. **§37 GL state contract** — the overlay experiment
+5. ~~Automate the regression checks~~ — done, see `scripts/verify_backends.sh`.
+6. **§37 GL state contract / roadmap §13** — the overlay experiment
    (`examples/gtk_glarea_overlay.rs`) is one data point on GTK4/Mesa/Wayland.
    Worth checking whether a heavier native-widget scene (more widgets,
    popups, scrolling) still composites cleanly, and eventually whether
    anything on the WinUI side has a similar concern once that platform is
-   reachable.
-5. **Phase 6 (Windows)** only becomes attemptable with actual access to a
+   reachable. The roadmap is explicit: don't freeze this from one GTK test.
+7. **Phase 6 (Windows)** only becomes attemptable with actual access to a
    Windows machine or CI runner to build and screenshot-verify against — do
    not write unverified WinUI/ANGLE integration code and mark it "done."
-6. **Phase 8 (advanced fidelity)** — shared blur/SDF across containers,
-   adaptive luminance, etc. — is real, scoped, verifiable work but hasn't
-   been started; the "Still Open" section of the master doc's §55 has the
-   open questions that would need answering first for some of it (container
-   semantics, backdrop scope).
+8. **Phase 9 (container/motion)** is blocked on container/grouping semantics
+   not existing in the renderer at all yet (`GlassGroup` is dead data, per
+   item 4) — this is substantial architecture work on its own, per the
+   roadmap's own framing, not something to fold casually into other phases.
 
 ## How to verify a change is real, not just "it compiled"
 
