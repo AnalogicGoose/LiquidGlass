@@ -12,7 +12,7 @@
 | 3 | `glow` GL renderer | Done — `src/backend/gl/` |
 | 4 | Standalone windowless-core sandbox + visual regression framework | Done — `examples/sandbox.rs`, `examples/visual_regression.rs` + `scripts/visual_regression.sh` |
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
-| 6 | Windows (WinUI 3 + ANGLE) integration | Not started — no Windows environment available to build or verify against |
+| 6 | Windows (WinUI 3 + ANGLE) integration | **Started, partially verified** — see below. No Windows dev machine here; using GitHub Actions windows-latest runners as the actual verification |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
 | 9 | Container interaction + motion | Not started (blocked on container/grouping semantics, which don't exist in the renderer yet) |
@@ -204,6 +204,52 @@ frame — see "GL state isolation" below for what that showed.
 
 **Not done:** the GLX fallback path for X11 sessions (only EGL is wired up;
 Wayland is what this was validated on).
+
+---
+
+## Phase 6 — Windows (WinUI 3 + ANGLE) integration (started, partially verified)
+
+No Windows dev machine exists in this project's environment. Per the
+roadmap's own rule ("don't assume compilation equals visual success"),
+that means Phase 6 can't be marked done from here — but GitHub Actions'
+`windows-latest` runners are real Windows, and `.github/workflows/windows.yml`
+uses them as the actual verification step instead of guessing.
+
+**Verified locally (Linux, mingw cross-compile):**
+`cargo build --release --lib --target x86_64-pc-windows-gnu` (after
+installing `rust-std-static-x86_64-pc-windows-gnu` + `mingw64-gcc` via
+`dnf`) produces a real PE32+ DLL. `x86_64-w64-mingw32-objdump -p` on it
+confirms all 9 `sg_*` C ABI functions are present in the export table.
+This is a cross-build, not the real MSVC target, so it only proves the
+crate's dependency graph and FFI surface are Windows-portable at all — see
+below for what actually runs on Windows.
+
+**Verified on real Windows (GitHub Actions `windows-latest`):**
+`.github/workflows/windows.yml` has two jobs:
+- `native-build-and-test`: builds `x86_64-pc-windows-msvc` natively (the
+  real target triple), runs `cargo test --lib` there, and re-confirms the
+  export table via `dumpbin /exports`. Check the workflow's latest run for
+  current status — first attempt failed at `cargo test --lib` because
+  `gtk4` (a dev-dependency needed only by the Linux-only
+  `examples/gtk_glarea*.rs`) doesn't build without pkg-config/system GTK
+  headers, which don't exist on that runner; fixed by scoping `gtk4` to
+  `[target.'cfg(target_os = "linux")'.dev-dependencies]` in `Cargo.toml`,
+  since it was never going to be needed on Windows anyway.
+- `c-abi-smoke`: builds `c_smoke/main.c` (the same file
+  `scripts/verify_backends.sh` already proves byte-identical on Linux)
+  with MSVC, linked against Google ANGLE's EGL/GLESv2 via vcpkg, and runs
+  it. This is the first time SparkGlass-rendered pixels have gone through
+  ANGLE on any platform — check the workflow's latest run for whether it
+  passed; the vcpkg ANGLE build is built from source and takes a while.
+
+**Not done, deliberately unverified:** `platform/windows/` has a WinUI 3 +
+`SwapChainPanel` + ANGLE host scaffold (`SparkGlassPanel.h`/`.cpp`) sketching
+the actual product integration — **not built, not run, not wired into any
+project**. Its own README explains exactly what's uncertain (mainly the
+EGL `SwapChainPanel` native-window property-set keys, which are an
+ANGLE-internal, version-sensitive contract). Don't upgrade this to "done"
+without a real Windows machine, Visual Studio, the Windows App SDK, and an
+actual screenshot — same rule as every other platform here.
 
 ---
 
