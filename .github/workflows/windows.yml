@@ -25,6 +25,13 @@ on:
       - "Cargo.toml"
   workflow_dispatch:
 
+# c-abi-smoke's vcpkg step builds ANGLE from source (20-40 min); without
+# this, pushing twice in quick succession runs two full copies of that in
+# parallel instead of the newer push just cancelling the stale one.
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native-build-and-test:
     # Native x86_64-pc-windows-msvc — the real target triple, not a Linux
@@ -88,6 +95,16 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - name: cargo build --release --lib
         run: cargo build --release --lib
+      - name: Cache vcpkg's built ANGLE binaries
+        # Building ANGLE from source is the slow part of this job (20-40
+        # min cold); vcpkg's binary caching means every run after the
+        # first reuses the compiled output instead of rebuilding it. Keyed
+        # on the runner image so a GitHub-side toolchain bump invalidates
+        # it automatically rather than silently reusing stale binaries.
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg-cache
+          key: vcpkg-angle-x64-windows-${{ runner.os }}-${{ hashFiles('.github/workflows/windows.yml') }}
       - name: Install ANGLE (EGL/GLESv2) via vcpkg
         # The classic/desktop triplet, not a UWP package — c_smoke.exe is a
         # plain Win32 console app. (Microsoft's ANGLE.WindowsStore NuGet
@@ -95,6 +112,8 @@ jobs:
         # faster, but its own docs say it's UWP-only and a desktop app
         # "must obtain the binaries via another method" — so this is the
         # correct choice, just a slower one.)
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}\\vcpkg-cache,readwrite"
         run: |
           vcpkg install angle:x64-windows
         shell: pwsh
@@ -126,5 +145,21 @@ jobs:
           Copy-Item target\release\spark_glass.dll .
           Copy-Item "${{ steps.vcpkg.outputs.root }}\bin\libEGL.dll" .
           Copy-Item "${{ steps.vcpkg.outputs.root }}\bin\libGLESv2.dll" .
+      - name: Check DLL dependencies before running
+        # First run of this job produced zero output — not even c_smoke's
+        # own first fprintf, which only happens after a hard crash (a
+        # graceful `return 1` always prints something first, and the CRT
+        # flushes stdio on normal exit even when redirected/fully
+        # buffered). Most likely a missing dependency DLL, so check that
+        # explicitly before trying again.
+        shell: pwsh
+        run: |
+          dumpbin /dependents c_smoke.exe
+          dumpbin /dependents spark_glass.dll
       - name: Run c_smoke.exe
-        run: .\c_smoke.exe
+        shell: pwsh
+        run: |
+          & .\c_smoke.exe
+          $code = $LASTEXITCODE
+          Write-Host "c_smoke.exe exit code: $code"
+          if ($code -ne 0) { throw "c_smoke.exe failed with exit code $code" }

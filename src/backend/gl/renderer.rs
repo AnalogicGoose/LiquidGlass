@@ -13,7 +13,7 @@
 
 use super::shader::compile_program;
 use super::target::GlTarget;
-use crate::glass::{GlassQuality, GlassScene, GlassSurface};
+use crate::glass::{GlassQuality, GlassScene, GlassSurface, interaction_energy};
 use glam::Vec2;
 use glow::HasContext;
 
@@ -69,6 +69,7 @@ struct GlassProgram {
     contrast: Loc,
     clear_dimming: Loc,
     adaptive_response: Loc,
+    interaction: Loc,
     u_scene: Loc,
     u_scene_blur: Loc,
     u_stack_mask: Loc,
@@ -102,6 +103,7 @@ impl GlassProgram {
                 contrast: loc(gl, program, "u_contrast"),
                 clear_dimming: loc(gl, program, "u_clear_dimming"),
                 adaptive_response: loc(gl, program, "u_adaptive_response"),
+                interaction: loc(gl, program, "u_interaction"),
                 u_scene: loc(gl, program, "u_scene"),
                 u_scene_blur: loc(gl, program, "u_scene_blur"),
                 u_stack_mask: loc(gl, program, "u_stack_mask"),
@@ -441,6 +443,7 @@ impl GlGlassRenderer {
             gl.uniform_1_f32(self.glass.contrast.as_ref(), surface.material.contrast);
             gl.uniform_1_f32(self.glass.clear_dimming.as_ref(), surface.material.clear_dimming);
             gl.uniform_1_f32(self.glass.adaptive_response.as_ref(), surface.material.adaptive_response);
+            gl.uniform_1_f32(self.glass.interaction.as_ref(), interaction_energy(surface.interaction));
             gl.uniform_2_f32(self.glass.ndc_size.as_ref(), frame.x, frame.y);
 
             let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;

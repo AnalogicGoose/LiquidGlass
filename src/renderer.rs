@@ -3,7 +3,7 @@
 //! `glass` without leaking platform effects into application code.
 #![allow(dead_code)] // Native adapter contracts are intentionally not linked by this PoC.
 
-use crate::glass::{GlassQuality, GlassScene, GlassSurface};
+use crate::glass::{GlassQuality, GlassScene, GlassSurface, interaction_energy};
 use macroquad::prelude::*;
 
 pub const SHADOW_MARGIN: f32 = 96.0;
@@ -103,6 +103,7 @@ impl MacroquadGlassRenderer {
                     UniformDesc::new("u_contrast", UniformType::Float1),
                     UniformDesc::new("u_clear_dimming", UniformType::Float1),
                     UniformDesc::new("u_adaptive_response", UniformType::Float1),
+                    UniformDesc::new("u_interaction", UniformType::Float1),
                 ],
                 textures: vec![
                     "u_scene".to_owned(),
@@ -271,6 +272,8 @@ impl MacroquadGlassRenderer {
             .set_uniform("u_clear_dimming", surface.material.clear_dimming);
         self.glass
             .set_uniform("u_adaptive_response", surface.material.adaptive_response);
+        self.glass
+            .set_uniform("u_interaction", interaction_energy(surface.interaction));
         gl_use_material(&self.glass);
         let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
         let quad = geometry.size() + SHADOW_MARGIN * 2.0;

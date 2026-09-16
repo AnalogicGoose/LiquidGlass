@@ -96,6 +96,16 @@ fn panel_with(id: u64, center: glam::Vec2, edit: impl Fn(&mut GlassMaterial, &mu
     }
 }
 
+/// Same reference panel as `panel_with`, but with `interaction` overridden
+/// instead of material/optics — Phase 9.5's glow lives on `GlassSurface`
+/// directly, not inside `GlassMaterial`/`GlassOptics`, so it needs its own
+/// tiny helper rather than fitting the generic `Sweep` shape below.
+fn interaction_demo_panel(id: u64, center: glam::Vec2, interaction: GlassInteraction) -> GlassSurface {
+    let mut surface = panel_with(id, center, |_material, _optics| {});
+    surface.interaction = interaction;
+    surface
+}
+
 struct Sweep {
     parameter: &'static str,
     values: &'static [f32],
@@ -196,6 +206,32 @@ fn main() {
                 let path = out_dir.join(format!("{value}.png"));
                 capture_png(&gl, WIDTH, HEIGHT, &path);
                 println!("{} = {value} -> {}", sweep.parameter, path.display());
+            }
+        }
+
+        // Phase 9.5 (docs/SparkGlass_ROADMAP.md): not a continuous sweep
+        // (interaction is 5 discrete states, not a float range), so this
+        // renders each state directly instead of going through `SWEEPS`.
+        {
+            let out_dir = Path::new("tests/parameter_sweep/interaction");
+            std::fs::create_dir_all(out_dir).expect("failed to create sweep output dir");
+
+            for state in [
+                GlassInteraction::Idle,
+                GlassInteraction::Hovered,
+                GlassInteraction::Selected,
+                GlassInteraction::Pressed,
+                GlassInteraction::Dragged,
+            ] {
+                renderer.draw_backdrop(&gl, background, background_size);
+                let surface = interaction_demo_panel(1, center, state);
+                let scene = GlassScene::new(vec![surface]);
+                renderer.render(&gl, &scene);
+                renderer.present(&gl, WIDTH, HEIGHT);
+
+                let path = out_dir.join(format!("{state:?}.png"));
+                capture_png(&gl, WIDTH, HEIGHT, &path);
+                println!("interaction = {state:?} -> {}", path.display());
             }
         }
 

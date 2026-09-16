@@ -34,6 +34,24 @@ pub enum GlassInteraction {
     Selected,
 }
 
+/// Roadmap Phase 9.5 ("Interaction Illumination"): how strongly a surface's
+/// edge should glow for its current `GlassInteraction` state, 0..1. `Idle`
+/// is exactly `0.0` — a true no-op, so every surface that's never touched
+/// (every visual regression golden, every style-gallery scene) renders
+/// unchanged. The ordering (hover < selected < pressed < dragged) is a
+/// judgment call, not derived from anything — the roadmap specifies the
+/// *mechanism* ("pointer/touch → energy field → local glow → edge
+/// response"), not these particular numbers.
+pub fn interaction_energy(interaction: GlassInteraction) -> f32 {
+    match interaction {
+        GlassInteraction::Idle => 0.0,
+        GlassInteraction::Hovered => 0.25,
+        GlassInteraction::Selected => 0.35,
+        GlassInteraction::Pressed => 0.55,
+        GlassInteraction::Dragged => 1.0,
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct GlassMaterial {
     pub frost_radius: f32,
@@ -147,10 +165,12 @@ pub struct GlassSurface {
     pub material: GlassMaterial,
     pub optics: GlassOptics,
     pub lighting: GlassLighting,
-    /// Tracked (`main.rs` sets it while dragging a panel) but not yet wired
-    /// to any shader uniform — no renderer reads it. This one has a clearer
-    /// future than `GlassMaterial`'s dead fields: it's what roadmap Phase
-    /// 9.5 ("Interaction Illumination") would consume.
+    /// Wired via `interaction_energy()` to a real shader uniform (Phase
+    /// 9.5, "Interaction Illumination") — a surface's edge glows while
+    /// it's being interacted with. `main.rs` sets this to `Dragged` while
+    /// dragging a panel; `Hovered`/`Pressed`/`Selected` exist in the enum
+    /// but nothing currently sets them (no hover/press-vs-click detection
+    /// exists in any host yet).
     pub interaction: GlassInteraction,
     pub style: GlassStyle,
 }
@@ -470,5 +490,20 @@ mod tests {
         scene.apply_group_style("pill");
         assert_eq!(scene.surfaces[0].style, GlassStyle::Control);
         assert_eq!(scene.surfaces[1].style, GlassStyle::Regular);
+    }
+
+    #[test]
+    fn interaction_energy_is_a_true_no_op_at_idle_and_increases_toward_dragged() {
+        assert_eq!(interaction_energy(GlassInteraction::Idle), 0.0);
+        let energies = [
+            interaction_energy(GlassInteraction::Hovered),
+            interaction_energy(GlassInteraction::Selected),
+            interaction_energy(GlassInteraction::Pressed),
+            interaction_energy(GlassInteraction::Dragged),
+        ];
+        for pair in energies.windows(2) {
+            assert!(pair[0] < pair[1], "{energies:?} should be strictly increasing");
+        }
+        assert_eq!(interaction_energy(GlassInteraction::Dragged), 1.0);
     }
 }

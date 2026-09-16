@@ -15,7 +15,7 @@
 | 6 | Windows (WinUI 3 + ANGLE) integration | **Started, partially verified** — see below. No Windows dev machine here; using GitHub Actions windows-latest runners as the actual verification |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
-| 9 | Container interaction + motion | **Started** — 9.1 (Explicit Glass Containers) done at the scene-model level; 9.2–9.5 not started, see below |
+| 9 | Container interaction + motion | **Started** — 9.1 (Containers) and 9.5 (Interaction Illumination, surface-level) done; 9.2–9.4 not started, see below |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
@@ -539,13 +539,45 @@ started.
 frame struct, waiting for a motion system to reduce — see its doc comment
 in `src/glass.rs`.
 
-## Phase 9.5 — Interaction Illumination (not started)
+## Phase 9.5 — Interaction Illumination (done, surface-level)
 
-`GlassSurface::interaction` already exists and is tracked (`src/main.rs`
-sets it while dragging a panel) but has zero corresponding shader uniform —
-see its doc comment in `src/glass.rs`. This is the most direct next step
-if 9.x work continues: the state already flows through the scene model,
-it just doesn't reach `glass.frag` yet.
+`GlassSurface::interaction` now has a real shader effect. Added:
+
+- `interaction_energy(GlassInteraction) -> f32` in `src/glass.rs`: maps the
+  5-state enum to a 0..1 glow strength (`Idle` = `0.0`, a true no-op;
+  `Hovered` 0.25 < `Selected` 0.35 < `Pressed` 0.55 < `Dragged` 1.0 — an
+  ordering judgment call, not derived from anything, since the roadmap
+  specifies the mechanism, not particular numbers).
+- `glass.frag`'s new `u_interaction` uniform drives a soft, omnidirectional
+  edge glow (`INTERACTION_GLOW_COLOR`, a warm white) — deliberately not
+  favoring one side toward a light angle the way the existing directional
+  highlights do, since this is the material responding to being touched,
+  not to a light source.
+- Wired identically in both renderers (macroquad + glow), same pattern as
+  every Phase 8 addition.
+
+**Verified:** `interaction_energy`'s no-op-at-Idle and strictly-increasing
+ordering are unit tested. All 9 visual regression goldens stayed at
+0.0000-0.0002% RMSE (every golden scene is Idle, so this proves the new
+uniform is inert at its default — same proof method as 8.5/8.8).
+`examples/parameter_sweep.rs` gained a dedicated (non-continuous, since
+interaction is 5 discrete states) render of all 5 states; `Dragged` vs.
+`Idle` measured at ~1.35% RMSE — a real, moderate, visually-confirmed
+glow, not an invisible no-op. `src/main.rs` already sets `Dragged` while
+dragging a panel (it always has — the field just had nowhere to go before
+this), so this is live in the reference app with no further changes.
+
+**Not done:** the roadmap's full conceptual flow is "pointer/touch →
+energy field → **local** glow → edge response" — this implementation is
+surface-level (the whole edge glows uniformly), not yet localized to
+where the pointer actually is on the surface. True per-pixel localization
+would need a pointer-position uniform (host-space or surface-local
+coordinates), which `GlassSurface` doesn't carry today; adding one touches
+every `GlassSurface` construction site (`main.rs`, every example,
+`ffi/frame.rs`), a bigger change deliberately not taken here.
+`Hovered`/`Pressed`/`Selected` also have no host actually setting them yet
+— no hover/press-vs-click detection exists in any current host, only
+drag detection in `src/main.rs`.
 
 ---
 

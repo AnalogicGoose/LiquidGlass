@@ -46,7 +46,13 @@ uniform float u_contrast;         // 1 = no change
 uniform float u_clear_dimming;    // 0 = no local dimming (Clear Material Dimming, 8.8)
 uniform float u_adaptive_response; // 0 = no backdrop-adaptive rim boost (8.5)
 
+// Phase 9.5 (docs/SparkGlass_ROADMAP.md): "Interaction Illumination" — a
+// surface's edge glows while it's being touched/dragged/pressed. 0 (Idle,
+// see glass.rs's interaction_energy()) is a no-op.
+uniform float u_interaction;
+
 const float IOR = 1.5;
+const vec3 INTERACTION_GLOW_COLOR = vec3(1.0, 0.98, 0.9); // warm white — reads as "lit", not "tinted"
 
 // Valores fijos del diseño de Figma. Los que cambian entre la variante clara
 // ("Regular") y la oscura ("Dark") van en pares LIGHT / DARK.
@@ -286,6 +292,15 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     float glow_top = 1.0 - blurred_coverage(sd_shape(p - glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     float glow_bottom = 1.0 - blurred_coverage(sd_shape(p + glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     col += mix(LIGHT_EDGE_GLOW_COLOR, DARK_EDGE_GLOW_COLOR, u_tint_mode) * (glow_top + glow_bottom) * (1.0 + 0.25 * local_busyness);
+
+    // Phase 9.5 — Interaction Illumination: a soft, omnidirectional edge
+    // glow while a surface is hovered/pressed/dragged/selected
+    // (interaction_energy() in glass.rs maps GlassInteraction to
+    // u_interaction). Idle is 0 — a true no-op. Unlike the directional
+    // lighting above, this doesn't favor one side toward a light angle —
+    // it's the material responding to being touched, not to a light source.
+    float interaction_band = 1.0 - smoothstep(0.0, bezel * 0.5, dist);
+    col += u_interaction * interaction_band * INTERACTION_GLOW_COLOR * 0.18;
 
     // Phase 8's remaining infrastructure piece: a final neutral-by-default
     // color grade (saturation/brightness/contrast), applied after highlights
