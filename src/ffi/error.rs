@@ -6,7 +6,7 @@
 /// to check with `result < 0`.
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LGResult {
+pub enum SGResult {
     Ok = 0,
     ErrorNullPointer = -1,
     ErrorInvalidStructSize = -2,

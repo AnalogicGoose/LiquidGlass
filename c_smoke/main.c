@@ -1,6 +1,6 @@
 /*
  * Phase 2 exit-condition proof, taken literally: a plain C program, built
- * with a plain C compiler, linking directly against libspark_glass_poc.so
+ * with a plain C compiler, linking directly against libspark_glass.so
  * and spark_glass.h — no Rust anywhere in this file or its build.
  *
  * Uses a headless EGL pbuffer context (no window/display server dependency
@@ -12,7 +12,7 @@
  *   gcc c_smoke/main.c -Iinclude -lEGL -lGLESv2 \
  *       -L$(cargo metadata --no-deps --format-version 1 | python3 -c \
  *           'import json,sys;print(json.load(sys.stdin)["target_directory"])')/debug \
- *       -lspark_glass_poc -Wl,-rpath,'$ORIGIN' -o /tmp/spark_glass_c_smoke
+ *       -lspark_glass -Wl,-rpath,'$ORIGIN' -o /tmp/spark_glass_c_smoke
  *   LD_LIBRARY_PATH=<target-dir>/debug /tmp/spark_glass_c_smoke
  */
 #include <EGL/egl.h>
@@ -72,12 +72,12 @@ int main(void) {
         return 1;
     }
 
-    LiquidGlassContext *ctx = lg_create(gl_proc, 800.0f, 600.0f);
+    SparkGlassContext *ctx = sg_create(gl_proc, 800.0f, 600.0f);
     if (!ctx) {
-        fprintf(stderr, "lg_create returned NULL\n");
+        fprintf(stderr, "sg_create returned NULL\n");
         return 1;
     }
-    printf("lg_create: OK\n");
+    printf("sg_create: OK\n");
 
     /* A trivial 2x2 texture, uploaded directly with GLES2 calls (this
      * program links against libGLESv2 itself) — stands in for whatever
@@ -92,32 +92,32 @@ int main(void) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    LGTextureHandle backdrop = lg_import_gl_texture(ctx, gl_texture, 2.0f, 2.0f);
+    SGTextureHandle backdrop = sg_import_gl_texture(ctx, gl_texture, 2.0f, 2.0f);
     if (backdrop == 0) {
-        fprintf(stderr, "lg_import_gl_texture failed: %s\n", lg_last_error(ctx));
+        fprintf(stderr, "sg_import_gl_texture failed: %s\n", sg_last_error(ctx));
         return 1;
     }
-    printf("lg_import_gl_texture: OK (handle=%llu)\n", (unsigned long long) backdrop);
+    printf("sg_import_gl_texture: OK (handle=%llu)\n", (unsigned long long) backdrop);
 
-    LGResult backdrop_result = lg_set_backdrop(ctx, backdrop);
-    if (backdrop_result != LG_OK) {
-        fprintf(stderr, "lg_set_backdrop failed: %d (%s)\n", backdrop_result, lg_last_error(ctx));
+    SGResult backdrop_result = sg_set_backdrop(ctx, backdrop);
+    if (backdrop_result != SG_OK) {
+        fprintf(stderr, "sg_set_backdrop failed: %d (%s)\n", backdrop_result, sg_last_error(ctx));
         return 1;
     }
-    printf("lg_set_backdrop: OK\n");
+    printf("sg_set_backdrop: OK\n");
 
     /* An unknown handle must be rejected, not silently accepted. */
-    LGResult bad_backdrop_result = lg_set_backdrop(ctx, backdrop + 1000);
-    if (bad_backdrop_result != LG_ERROR_INVALID_TEXTURE) {
-        fprintf(stderr, "expected LG_ERROR_INVALID_TEXTURE, got %d\n", bad_backdrop_result);
+    SGResult bad_backdrop_result = sg_set_backdrop(ctx, backdrop + 1000);
+    if (bad_backdrop_result != SG_ERROR_INVALID_TEXTURE) {
+        fprintf(stderr, "expected SG_ERROR_INVALID_TEXTURE, got %d\n", bad_backdrop_result);
         return 1;
     }
-    printf("unknown-handle guard: OK (%s)\n", lg_last_error(ctx));
+    printf("unknown-handle guard: OK (%s)\n", sg_last_error(ctx));
 
-    lg_release_texture(ctx, backdrop);
-    printf("lg_release_texture: OK\n");
+    sg_release_texture(ctx, backdrop);
+    printf("sg_release_texture: OK\n");
 
-    LGGlassElement element = {0};
+    SGGlassElement element = {0};
     element.id = 1;
     element.center_x = 400.0f;
     element.center_y = 300.0f;
@@ -136,42 +136,42 @@ int main(void) {
     element.dark_tint = 0;
     element.shadow_strength = 1.0f;
 
-    LGFrame frame = {0};
-    frame.struct_size = sizeof(LGFrame);
+    SGFrame frame = {0};
+    frame.struct_size = sizeof(SGFrame);
     frame.width = 800.0f;
     frame.height = 600.0f;
-    frame.quality = LG_QUALITY_HIGH;
+    frame.quality = SG_QUALITY_HIGH;
     frame.reduced_transparency = 0;
     frame.reduced_motion = 0;
     frame.elements = &element;
     frame.element_count = 1;
 
-    LGResult render_result = lg_render_frame(ctx, &frame);
-    if (render_result != LG_OK) {
-        fprintf(stderr, "lg_render_frame failed: %d (%s)\n", render_result, lg_last_error(ctx));
+    SGResult render_result = sg_render_frame(ctx, &frame);
+    if (render_result != SG_OK) {
+        fprintf(stderr, "sg_render_frame failed: %d (%s)\n", render_result, sg_last_error(ctx));
         return 1;
     }
-    printf("lg_render_frame: OK\n");
+    printf("sg_render_frame: OK\n");
 
-    LGResult present_result = lg_present(ctx, 800, 600);
-    if (present_result != LG_OK) {
-        fprintf(stderr, "lg_present failed: %d\n", present_result);
+    SGResult present_result = sg_present(ctx, 800, 600);
+    if (present_result != SG_OK) {
+        fprintf(stderr, "sg_present failed: %d\n", present_result);
         return 1;
     }
-    printf("lg_present: OK\n");
+    printf("sg_present: OK\n");
 
-    /* Deliberately exercise the struct-versioning guard: an LGFrame from a
+    /* Deliberately exercise the struct-versioning guard: an SGFrame from a
      * mismatched header must be rejected, not silently misread. */
-    LGFrame bad_frame = frame;
-    bad_frame.struct_size = sizeof(LGFrame) + 8;
-    LGResult bad_result = lg_render_frame(ctx, &bad_frame);
-    if (bad_result != LG_ERROR_INVALID_STRUCT_SIZE) {
-        fprintf(stderr, "expected LG_ERROR_INVALID_STRUCT_SIZE, got %d\n", bad_result);
+    SGFrame bad_frame = frame;
+    bad_frame.struct_size = sizeof(SGFrame) + 8;
+    SGResult bad_result = sg_render_frame(ctx, &bad_frame);
+    if (bad_result != SG_ERROR_INVALID_STRUCT_SIZE) {
+        fprintf(stderr, "expected SG_ERROR_INVALID_STRUCT_SIZE, got %d\n", bad_result);
         return 1;
     }
-    printf("struct_size guard: OK (%s)\n", lg_last_error(ctx));
+    printf("struct_size guard: OK (%s)\n", sg_last_error(ctx));
 
-    lg_destroy(ctx);
-    printf("lg_destroy: OK\nAll checks passed.\n");
+    sg_destroy(ctx);
+    printf("sg_destroy: OK\nAll checks passed.\n");
     return 0;
 }

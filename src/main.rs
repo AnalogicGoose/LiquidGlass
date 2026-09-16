@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
-use spark_glass_poc::glass::*;
-use spark_glass_poc::renderer::MacroquadGlassRenderer;
+use spark_glass::glass::*;
+use spark_glass::renderer::MacroquadGlassRenderer;
 use std::time::Instant;
 
 const BACKGROUNDS: [&[u8]; 4] = [

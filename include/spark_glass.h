@@ -23,31 +23,31 @@ extern "C" {
 #endif
 
 /* Opaque — never inspect its layout, only ever hold a pointer to it. */
-typedef struct LiquidGlassContext LiquidGlassContext;
+typedef struct SparkGlassContext SparkGlassContext;
 
 /*
  * Resolves a GL function name to its address, exactly like
  * eglGetProcAddress / wglGetProcAddress / glXGetProcAddress. The host must
  * have a GL/GLES context current on the calling thread before calling
- * lg_create — SparkGlass never creates its own context.
+ * sg_create — SparkGlass never creates its own context.
  */
-typedef const void *(*LGGlProc)(const char *name);
+typedef const void *(*SGGlProc)(const char *name);
 
-typedef int32_t LGResult;
-#define LG_OK 0
-#define LG_ERROR_NULL_POINTER (-1)
-#define LG_ERROR_INVALID_STRUCT_SIZE (-2)
-#define LG_ERROR_PANIC (-3)
-#define LG_ERROR_INVALID_TEXTURE (-4)
+typedef int32_t SGResult;
+#define SG_OK 0
+#define SG_ERROR_NULL_POINTER (-1)
+#define SG_ERROR_INVALID_STRUCT_SIZE (-2)
+#define SG_ERROR_PANIC (-3)
+#define SG_ERROR_INVALID_TEXTURE (-4)
 
-typedef int32_t LGQuality;
-#define LG_QUALITY_ULTRA 0
-#define LG_QUALITY_HIGH 1
-#define LG_QUALITY_MEDIUM 2
-#define LG_QUALITY_LOW 3
-#define LG_QUALITY_FALLBACK 4
+typedef int32_t SGQuality;
+#define SG_QUALITY_ULTRA 0
+#define SG_QUALITY_HIGH 1
+#define SG_QUALITY_MEDIUM 2
+#define SG_QUALITY_LOW 3
+#define SG_QUALITY_FALLBACK 4
 
-/* One glass surface. Field order must match LGGlassElement in
+/* One glass surface. Field order must match SGGlassElement in
  * src/ffi/frame.rs exactly. */
 typedef struct {
     uint64_t id;
@@ -67,48 +67,48 @@ typedef struct {
     float tint_opacity;
     uint8_t dark_tint; /* 0 = light tint, non-zero = dark tint */
     float shadow_strength;
-} LGGlassElement;
+} SGGlassElement;
 
 /* One frame's worth of scene description. struct_size MUST be set to
- * sizeof(LGFrame) — the ABI-versioning guard; a mismatch is rejected with
- * LG_ERROR_INVALID_STRUCT_SIZE instead of silently misread. */
+ * sizeof(SGFrame) — the ABI-versioning guard; a mismatch is rejected with
+ * SG_ERROR_INVALID_STRUCT_SIZE instead of silently misread. */
 typedef struct {
     size_t struct_size;
     float width;
     float height;
-    LGQuality quality;
+    SGQuality quality;
     uint8_t reduced_transparency;
     uint8_t reduced_motion;
-    const LGGlassElement *elements;
+    const SGGlassElement *elements;
     size_t element_count;
-} LGFrame;
+} SGFrame;
 
 /*
- * Opaque handle to a texture imported via lg_import_gl_texture. 0 is always
+ * Opaque handle to a texture imported via sg_import_gl_texture. 0 is always
  * invalid (a failed import returns 0), matching the usual C null-handle
  * convention.
  */
-typedef uint64_t LGTextureHandle;
+typedef uint64_t SGTextureHandle;
 
-LiquidGlassContext *lg_create(LGGlProc loader, float width, float height);
-void lg_destroy(LiquidGlassContext *ctx);
-LGResult lg_resize(LiquidGlassContext *ctx, float width, float height);
+SparkGlassContext *sg_create(SGGlProc loader, float width, float height);
+void sg_destroy(SparkGlassContext *ctx);
+SGResult sg_resize(SparkGlassContext *ctx, float width, float height);
 
 /* Imports a host-owned GL texture, returning an opaque handle the scene can
- * reference via lg_set_backdrop. The host retains ownership — SparkGlass
+ * reference via sg_set_backdrop. The host retains ownership — SparkGlass
  * samples it but never destroys it. Returns 0 on failure. */
-LGTextureHandle lg_import_gl_texture(LiquidGlassContext *ctx, uint32_t gl_texture_id, float width, float height);
+SGTextureHandle sg_import_gl_texture(SparkGlassContext *ctx, uint32_t gl_texture_id, float width, float height);
 /* Forgets a handle. Does not destroy the underlying GL texture. */
-void lg_release_texture(LiquidGlassContext *ctx, LGTextureHandle handle);
+void sg_release_texture(SparkGlassContext *ctx, SGTextureHandle handle);
 
 /* Draws a previously imported texture as the scene backdrop for the next
- * lg_render_frame call, cover-fit to the frame. */
-LGResult lg_set_backdrop(LiquidGlassContext *ctx, LGTextureHandle texture);
+ * sg_render_frame call, cover-fit to the frame. */
+SGResult sg_set_backdrop(SparkGlassContext *ctx, SGTextureHandle texture);
 
-LGResult lg_render_frame(LiquidGlassContext *ctx, const LGFrame *frame);
-LGResult lg_present(LiquidGlassContext *ctx, int32_t dst_width, int32_t dst_height);
+SGResult sg_render_frame(SparkGlassContext *ctx, const SGFrame *frame);
+SGResult sg_present(SparkGlassContext *ctx, int32_t dst_width, int32_t dst_height);
 /* Valid until the next call on this context; copy it out if you need to keep it. */
-const char *lg_last_error(LiquidGlassContext *ctx);
+const char *sg_last_error(SparkGlassContext *ctx);
 
 #ifdef __cplusplus
 }

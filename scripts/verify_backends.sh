@@ -32,12 +32,12 @@ ok() { printf '  OK: %s\n' "$1"; pass=$((pass + 1)); }
 bad() { printf '  FAIL: %s\n' "$1"; fail=$((fail + 1)); }
 
 note "Building"
-cargo build -p spark_glass_poc --bins --examples --lib
+cargo build -p spark_glass --bins --examples --lib
 
 note "Capturing each backend's output (headless glReadPixels, frame 5)"
-SPARK_GLASS_CAPTURE="$work_dir/reference_macroquad.png" timeout 15 cargo run -p spark_glass_poc --bin spark_glass_poc >/dev/null 2>&1 || true
-SPARK_GLASS_SANDBOX_CAPTURE="$work_dir/sandbox.png" timeout 15 cargo run -p spark_glass_poc --example sandbox >/dev/null 2>&1 || true
-SPARK_GLASS_SANDBOX_CAPTURE="$work_dir/ffi_smoke.png" timeout 15 cargo run -p spark_glass_poc --example ffi_smoke >/dev/null 2>&1 || true
+SPARK_GLASS_CAPTURE="$work_dir/reference_macroquad.png" timeout 15 cargo run -p spark_glass --bin spark_glass >/dev/null 2>&1 || true
+SPARK_GLASS_SANDBOX_CAPTURE="$work_dir/sandbox.png" timeout 15 cargo run -p spark_glass --example sandbox >/dev/null 2>&1 || true
+SPARK_GLASS_SANDBOX_CAPTURE="$work_dir/ffi_smoke.png" timeout 15 cargo run -p spark_glass --example ffi_smoke >/dev/null 2>&1 || true
 if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     SPARK_GLASS_SANDBOX_CAPTURE="$work_dir/gtk_glarea.png" timeout 15 "$target_dir/debug/examples/gtk_glarea" >/dev/null 2>&1 || true
 fi
@@ -65,7 +65,7 @@ fi
 note "Pure-C ABI smoke test (no Rust in this build)"
 if command -v gcc >/dev/null && [ -f /usr/include/EGL/egl.h ]; then
     c_bin="$work_dir/spark_glass_c_smoke"
-    if gcc c_smoke/main.c -Iinclude -lEGL -lGLESv2 -L"$target_dir/debug" -lspark_glass_poc -Wl,-rpath,"$target_dir/debug" -o "$c_bin" 2>"$work_dir/c_smoke_build.log"; then
+    if gcc c_smoke/main.c -Iinclude -lEGL -lGLESv2 -L"$target_dir/debug" -lspark_glass -Wl,-rpath,"$target_dir/debug" -o "$c_bin" 2>"$work_dir/c_smoke_build.log"; then
         if "$c_bin" >"$work_dir/c_smoke_run.log" 2>&1 && grep -q "All checks passed" "$work_dir/c_smoke_run.log"; then
             ok "c_smoke: all checks passed"
         else
@@ -81,7 +81,7 @@ else
 fi
 
 note "Unit tests"
-if cargo test -p spark_glass_poc --lib -q >"$work_dir/unit_tests.log" 2>&1; then
+if cargo test -p spark_glass --lib -q >"$work_dir/unit_tests.log" 2>&1; then
     ok "cargo test --lib"
 else
     bad "cargo test --lib — see $work_dir/unit_tests.log"

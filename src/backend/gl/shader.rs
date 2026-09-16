@@ -1,4 +1,4 @@
-//! Shader compilation helpers. LiquidGlass does not own the GL context here —
+//! Shader compilation helpers. SparkGlass does not own the GL context here —
 //! the host (an example sandbox today, a platform adapter eventually) creates
 //! it and hands us a current `glow::Context` per the FROZEN context-ownership
 //! rule.

@@ -1,6 +1,6 @@
 //! Phase 2 exit-condition proof: drives SparkGlass purely through the
 //! `extern "C"` functions in `src/ffi/`, the same way a C/C++ host would —
-//! no `GlGlassRenderer`, no `GlassScene`, just the opaque `LiquidGlassContext`
+//! no `GlGlassRenderer`, no `GlassScene`, just the opaque `SparkGlassContext`
 //! pointer and POD structs. If this compiles and renders correctly, the ABI
 //! boundary genuinely carries no Rust-specific requirement.
 //!
@@ -19,10 +19,10 @@ use glutin::prelude::*;
 use glutin::surface::{GlSurface, Surface, SwapInterval, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
-use spark_glass_poc::backend::gl::upload_rgba8;
-use spark_glass_poc::ffi::{
-    LGFrame, LGGlassElement, LGQuality, LGTextureHandle, LiquidGlassContext, lg_create, lg_destroy, lg_import_gl_texture, lg_present,
-    lg_render_frame, lg_resize, lg_set_backdrop,
+use spark_glass::backend::gl::upload_rgba8;
+use spark_glass::ffi::{
+    SGFrame, SGGlassElement, SGQuality, SGTextureHandle, SparkGlassContext, sg_create, sg_destroy, sg_import_gl_texture, sg_present,
+    sg_render_frame, sg_resize, sg_set_backdrop,
 };
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -37,7 +37,7 @@ const BACKGROUND: &[u8] = include_bytes!("../assets/image1.jpg");
 static GL_DISPLAY: OnceLock<Display> = OnceLock::new();
 
 unsafe extern "C" fn resolve_gl_proc(name: *const c_char) -> *const c_void {
-    let display = GL_DISPLAY.get().expect("GL display not initialized before lg_create");
+    let display = GL_DISPLAY.get().expect("GL display not initialized before sg_create");
     unsafe { display.get_proc_address(std::ffi::CStr::from_ptr(name)) as *const c_void }
 }
 
@@ -45,14 +45,14 @@ struct AppState {
     window: Window,
     gl_surface: Surface<WindowSurface>,
     gl_context: PossiblyCurrentContext,
-    ctx: *mut LiquidGlassContext,
-    background: LGTextureHandle,
+    ctx: *mut SparkGlassContext,
+    background: SGTextureHandle,
     frame: u64,
 }
 
 impl Drop for AppState {
     fn drop(&mut self) {
-        unsafe { lg_destroy(self.ctx) };
+        unsafe { sg_destroy(self.ctx) };
     }
 }
 
@@ -112,12 +112,12 @@ impl ApplicationHandler for App {
         let background = unsafe { upload_rgba8(&asset_gl, image.width() as i32, image.height() as i32, image.as_raw()) };
 
         let size = window.inner_size();
-        let ctx = unsafe { lg_create(resolve_gl_proc, size.width as f32, size.height as f32) };
-        assert!(!ctx.is_null(), "lg_create failed");
-        let background_handle = unsafe { lg_import_gl_texture(ctx, background.0.get(), image.width() as f32, image.height() as f32) };
-        assert_ne!(background_handle, 0, "lg_import_gl_texture failed");
-        let backdrop_result = unsafe { lg_set_backdrop(ctx, background_handle) };
-        assert_eq!(backdrop_result as i32, 0, "lg_set_backdrop failed");
+        let ctx = unsafe { sg_create(resolve_gl_proc, size.width as f32, size.height as f32) };
+        assert!(!ctx.is_null(), "sg_create failed");
+        let background_handle = unsafe { sg_import_gl_texture(ctx, background.0.get(), image.width() as f32, image.height() as f32) };
+        assert_ne!(background_handle, 0, "sg_import_gl_texture failed");
+        let backdrop_result = unsafe { sg_set_backdrop(ctx, background_handle) };
+        assert_eq!(backdrop_result as i32, 0, "sg_set_backdrop failed");
 
         self.state = Some(AppState {
             window,
@@ -136,8 +136,8 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
                 state.gl_surface.resize(&state.gl_context, NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap());
-                unsafe { lg_resize(state.ctx, size.width as f32, size.height as f32) };
-                unsafe { lg_set_backdrop(state.ctx, state.background) };
+                unsafe { sg_resize(state.ctx, size.width as f32, size.height as f32) };
+                unsafe { sg_set_backdrop(state.ctx, state.background) };
                 state.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -146,7 +146,7 @@ impl ApplicationHandler for App {
                 let (w, h) = (size.width as f32, size.height as f32);
 
                 let elements = [
-                    LGGlassElement {
+                    SGGlassElement {
                         id: 1,
                         center_x: w * 0.5,
                         center_y: h * 0.4,
@@ -165,7 +165,7 @@ impl ApplicationHandler for App {
                         dark_tint: 0,
                         shadow_strength: 1.0,
                     },
-                    LGGlassElement {
+                    SGGlassElement {
                         id: 2,
                         center_x: w * 0.5,
                         center_y: h * 0.86,
@@ -186,21 +186,21 @@ impl ApplicationHandler for App {
                     },
                 ];
 
-                let frame = LGFrame {
-                    struct_size: std::mem::size_of::<LGFrame>(),
+                let frame = SGFrame {
+                    struct_size: std::mem::size_of::<SGFrame>(),
                     width: w,
                     height: h,
-                    quality: LGQuality::High,
+                    quality: SGQuality::High,
                     reduced_transparency: 0,
                     reduced_motion: 0,
                     elements: elements.as_ptr(),
                     element_count: elements.len(),
                 };
 
-                let render_result = unsafe { lg_render_frame(state.ctx, &frame) };
-                assert_eq!(render_result as i32, 0, "lg_render_frame failed");
-                let present_result = unsafe { lg_present(state.ctx, size.width as i32, size.height as i32) };
-                assert_eq!(present_result as i32, 0, "lg_present failed");
+                let render_result = unsafe { sg_render_frame(state.ctx, &frame) };
+                assert_eq!(render_result as i32, 0, "sg_render_frame failed");
+                let present_result = unsafe { sg_present(state.ctx, size.width as i32, size.height as i32) };
+                assert_eq!(present_result as i32, 0, "sg_present failed");
 
                 if let Ok(path) = std::env::var("SPARK_GLASS_SANDBOX_CAPTURE")
                     && state.frame == 5

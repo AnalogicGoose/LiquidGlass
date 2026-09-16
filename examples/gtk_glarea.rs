@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, GLArea};
-use spark_glass_poc::backend::gl::{GlGlassRenderer, upload_rgba8};
-use spark_glass_poc::glass::*;
+use spark_glass::backend::gl::{GlGlassRenderer, upload_rgba8};
+use spark_glass::glass::*;
 
 const BACKGROUND: &[u8] = include_bytes!("../assets/image1.jpg");
 const APP_ID: &str = "org.analogicgoose.sparkglass.GtkGlAreaSandbox";

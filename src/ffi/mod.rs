@@ -8,14 +8,14 @@
 //! Typical sequence:
 //!
 //! ```text
-//! lg_create(loader, width, height)
-//! lg_import_gl_texture(ctx, gl_texture_id, width, height) -> handle   // once per texture
-//! lg_set_backdrop(ctx, handle)                                       // per frame, or once for static art
-//! lg_render_frame(ctx, &frame)
-//! lg_present(ctx, dst_width, dst_height)                    // with the host's target framebuffer bound
-//! lg_resize(ctx, width, height)                              // on resize
-//! lg_release_texture(ctx, handle)                            // when the host is done with it
-//! lg_destroy(ctx)
+//! sg_create(loader, width, height)
+//! sg_import_gl_texture(ctx, gl_texture_id, width, height) -> handle   // once per texture
+//! sg_set_backdrop(ctx, handle)                                       // per frame, or once for static art
+//! sg_render_frame(ctx, &frame)
+//! sg_present(ctx, dst_width, dst_height)                    // with the host's target framebuffer bound
+//! sg_resize(ctx, width, height)                              // on resize
+//! sg_release_texture(ctx, handle)                            // when the host is done with it
+//! sg_destroy(ctx)
 //! ```
 
 mod context;
@@ -23,7 +23,7 @@ mod error;
 mod frame;
 mod texture;
 
-pub use context::{LGGlProc, LiquidGlassContext, lg_create, lg_destroy, lg_last_error, lg_present, lg_resize, lg_set_backdrop};
-pub use error::LGResult;
-pub use frame::{LGFrame, LGGlassElement, LGQuality, lg_render_frame};
-pub use texture::{LGTextureHandle, lg_import_gl_texture, lg_release_texture};
+pub use context::{SGGlProc, SparkGlassContext, sg_create, sg_destroy, sg_last_error, sg_present, sg_resize, sg_set_backdrop};
+pub use error::SGResult;
+pub use frame::{SGFrame, SGGlassElement, SGQuality, sg_render_frame};
+pub use texture::{SGTextureHandle, sg_import_gl_texture, sg_release_texture};

@@ -1,11 +1,11 @@
-# LiquidGlass — Master Architecture, Rendering & AI Guidance
+# SparkGlass — Master Architecture, Rendering & AI Guidance
 
 > **Status:** Architecture / feature-freeze discussion document  
-> **Project:** `LiquidGlass`  
+> **Project:** `SparkGlass`  
 > **Language:** Rust  
 > **Primary platforms:** Windows + Linux  
 > **Primary consumer target:** GoosicReborn  
-> **Current implementation status:** Proof of concept (PoC)  
+> **Current implementation status:** Early production engine (`glow` renderer, C ABI, and Linux/GTK4 integration implemented and verified — see `docs/SparkGlass_IMPLEMENTATION_STATUS.md`). The Macroquad implementation described below is preserved as an internal visual reference, not the project itself.  
 > **Most important project requirement:** **VISUAL FIDELITY TO APPLE'S LIQUID GLASS**
 
 ---
@@ -14,7 +14,7 @@
 
 ## 🔴 Priority #1: the material must look right
 
-LiquidGlass exists to reproduce the **visual behavior, optical character, motion, layering, refraction, blur, edge response, lighting, geometry, and fluidity** of Apple's Liquid Glass as faithfully as reasonably possible on Windows and Linux.
+SparkGlass exists to reproduce the **visual behavior, optical character, motion, layering, refraction, blur, edge response, lighting, geometry, and fluidity** of Apple's Liquid Glass as faithfully as reasonably possible on Windows and Linux.
 
 Everything else exists to support that objective.
 
@@ -46,11 +46,11 @@ This does **not** mean performance is unimportant. Liquid Glass must still rende
 
 # 1. PURPOSE OF THIS DOCUMENT
 
-This file is the **master architectural context** for humans and AI agents working on LiquidGlass.
+This file is the **master architectural context** for humans and AI agents working on SparkGlass.
 
 It exists so that a future contributor does not accidentally:
 
-- turn LiquidGlass into a UI toolkit;
+- turn SparkGlass into a UI toolkit;
 - couple the core to GTK, WinUI, ANGLE, `winit`, or `glutin`;
 - replace the visual renderer with a simpler but visibly inferior approximation;
 - expose raw Rust types across the ABI;
@@ -76,23 +76,23 @@ This document distinguishes four kinds of statements:
 
 # 2. PROJECT OVERVIEW
 
-LiquidGlass is a cross-platform GPU visual-material library written in **Rust**.
+SparkGlass is a cross-platform GPU visual-material library written in **Rust**.
 
 The long-term output is intended to be a native standalone library:
 
 ```text
-Windows: LiquidGlass.dll
-Linux:   libliquidglass.so
+Windows: SparkGlass.dll
+Linux:   libsparkglass.so
 ```
 
 with a stable **C-compatible ABI** exposed using Rust `extern "C"` functions.
 
-The first major application intended to consume LiquidGlass is:
+The first major application intended to consume SparkGlass is:
 
 **GoosicReborn**  
 https://github.com/AnalogicGoose/GoosicReborn/tree/development
 
-However, LiquidGlass must remain independently usable by other native desktop applications.
+However, SparkGlass must remain independently usable by other native desktop applications.
 
 ---
 
@@ -141,7 +141,7 @@ Keep it available as a visual baseline until the new renderer reproduces its out
 
 ## FROZEN
 
-> **The host application owns the platform. LiquidGlass owns the glass material rendering.**
+> **The host application owns the platform. SparkGlass owns the glass material rendering.**
 
 The host owns:
 
@@ -155,7 +155,7 @@ The host owns:
 - native controls;
 - platform-specific compositor integration.
 
-LiquidGlass owns:
+SparkGlass owns:
 
 - glass geometry interpretation;
 - SDF generation / evaluation strategy;
@@ -172,7 +172,7 @@ LiquidGlass owns:
 - material implementation;
 - GPU resources internal to the renderer.
 
-LiquidGlass must **not** own:
+SparkGlass must **not** own:
 
 ```text
 window
@@ -213,19 +213,19 @@ DXGI / Windows GPU stack
 
 ### FROZEN
 
-LiquidGlass itself should **not need to know that ANGLE exists**.
+SparkGlass itself should **not need to know that ANGLE exists**.
 
 From the renderer's perspective it should see a usable OpenGL ES environment.
 
 This preserves a clean separation:
 
 ```text
-LiquidGlass = material renderer
+SparkGlass = material renderer
 ANGLE       = API translation/platform layer
 WinUI       = native UI/composition layer
 ```
 
-ANGLE itself supports GLES translation to multiple backends, including D3D11 and Vulkan. Therefore LiquidGlass can potentially benefit from Vulkan underneath ANGLE without becoming a Vulkan renderer itself.
+ANGLE itself supports GLES translation to multiple backends, including D3D11 and Vulkan. Therefore SparkGlass can potentially benefit from Vulkan underneath ANGLE without becoming a Vulkan renderer itself.
 
 ---
 
@@ -242,7 +242,7 @@ GdkGLContext
   ↓
 current OpenGL / GLES context
   ↓
-LiquidGlass
+SparkGlass
 ```
 
 GTK documents that `GtkGLArea`:
@@ -253,11 +253,11 @@ GTK documents that `GtkGLArea`:
 - calls the render callback with the GL context current;
 - integrates the completed rendering into GTK's larger scene graph as a texture.
 
-This is almost exactly the embedding model LiquidGlass needs.
+This is almost exactly the embedding model SparkGlass needs.
 
 ### FROZEN
 
-LiquidGlass should operate **inside the host's GL render callback**.
+SparkGlass should operate **inside the host's GL render callback**.
 
 It should not create a second unrelated context behind GTK's back.
 
@@ -299,13 +299,13 @@ Candidates discussed:
 
 ## PROVISIONAL RECOMMENDATION: `glow`
 
-Why it fits LiquidGlass:
+Why it fits SparkGlass:
 
 - supports OpenGL and OpenGL ES style environments;
 - accepts function loading supplied by the host;
 - has no requirement to own a window;
 - has no requirement to create the graphics context;
-- is thin enough that LiquidGlass remains close to GL;
+- is thin enough that SparkGlass remains close to GL;
 - is more ergonomic than raw generated global bindings;
 - is a good fit for GLES on ANGLE and GL/GLES on Linux.
 
@@ -319,7 +319,7 @@ They remain a possible fallback if `glow` proves to impose a concrete limitation
 
 EGL is useful on Windows/ANGLE and other platforms, but context creation is a **host/platform-adapter responsibility**.
 
-LiquidGlass should not require EGL merely because one host integration uses it.
+SparkGlass should not require EGL merely because one host integration uses it.
 
 ---
 
@@ -332,7 +332,7 @@ The renderer should target a **GLES 3.0-compatible baseline** wherever practical
 Conceptually:
 
 ```text
-LiquidGlass shader/rendering contract
+SparkGlass shader/rendering contract
              ↓
       GLES 3.0-compatible subset
          ┌───┴────┐
@@ -373,7 +373,7 @@ Optional GPU capabilities may improve quality/performance, but the capability sy
 
 ## FUTURE VISION
 
-LiquidGlass should conceptually be:
+SparkGlass should conceptually be:
 
 > **a GPU material engine whose first renderer is GL/GLES**
 
@@ -384,7 +384,7 @@ not:
 The desired long-term relationship is:
 
 ```text
-             LiquidGlass semantic model
+             SparkGlass semantic model
                        │
                        ▼
                   Render plan
@@ -450,7 +450,7 @@ ANGLE can translate GLES to **Vulkan**.
 Therefore this is possible:
 
 ```text
-LiquidGlass
+SparkGlass
    ↓
 GLES
    ↓
@@ -461,7 +461,7 @@ Vulkan
 GPU
 ```
 
-without changing LiquidGlass's first renderer.
+without changing SparkGlass's first renderer.
 
 This gives us a valuable experimental path on Windows before writing a native Vulkan backend.
 
@@ -494,10 +494,10 @@ That is premature architecture.
 
 ```text
 GlassElement
-  └── LGTextureHandle
+  └── SGTextureHandle
 
 GL renderer
-  └── resolves LGTextureHandle to GL resource
+  └── resolves SGTextureHandle to GL resource
 ```
 
 And internally:
@@ -572,7 +572,7 @@ Apple documents that grouped glass shapes:
 
 Apple also explains that glass samples content from an area **larger than the glass element itself** because of refraction/nearby-color behavior.
 
-This has a major implication for LiquidGlass.
+This has a major implication for SparkGlass.
 
 ## OLD simplistic model
 
@@ -602,7 +602,7 @@ GlassScene
      └── Element E
 ```
 
-The container gives LiquidGlass semantic permission to treat nearby elements as a coherent material group.
+The container gives SparkGlass semantic permission to treat nearby elements as a coherent material group.
 
 Possible internal optimizations/behavior:
 
@@ -628,7 +628,7 @@ Reference:
 **Gui Rambo — “Inside Liquid Glass: How iOS 26 Synthesizes Refractive UI”**  
 https://www.youtube.com/watch?v=oj20mb8c0yI
 
-The most important value of this video for LiquidGlass is not copying private Apple APIs.
+The most important value of this video for SparkGlass is not copying private Apple APIs.
 
 The important lesson is architectural:
 
@@ -664,13 +664,13 @@ The exact pass count remains an internal implementation detail.
 
 Apple can access the composited scene beneath its own material because Apple controls the compositor.
 
-LiquidGlass does **not** control GTK or WinUI's complete scene.
+SparkGlass does **not** control GTK or WinUI's complete scene.
 
 Therefore the host must provide the equivalent information explicitly — normally as a GPU-resident backdrop texture or compatible surface.
 
 ### 14.3 Geometry must be first-class
 
-LiquidGlass should receive semantic geometry:
+SparkGlass should receive semantic geometry:
 
 - bounds;
 - corner radii / shape parameters;
@@ -760,7 +760,7 @@ grouped elements
 - depend on private Apple frameworks;
 - copy private class names into our public ABI;
 - claim Apple's exact implementation is guaranteed;
-- design LiquidGlass around assumptions that only make sense inside Core Animation.
+- design SparkGlass around assumptions that only make sense inside Core Animation.
 
 ---
 
@@ -768,7 +768,7 @@ grouped elements
 
 Apple's system compositor can know what content is behind a glass surface.
 
-LiquidGlass cannot assume that.
+SparkGlass cannot assume that.
 
 Therefore the architecture becomes:
 
@@ -780,7 +780,7 @@ HOST
  └── glass geometry
            │
            ▼
-     LiquidGlass Scene
+     SparkGlass Scene
            │
            ▼
        GPU effects
@@ -801,7 +801,7 @@ This is a necessary platform-boundary difference, not a visual-design difference
 ## PROVISIONAL SEMANTIC MODEL
 
 ```text
-LGScene / LGFrame
+SGScene / SGFrame
 │
 ├── viewport / scale
 ├── backdrop(s)
@@ -823,7 +823,7 @@ LGScene / LGFrame
           └── interaction state if needed
 ```
 
-The semantic API tells LiquidGlass **what the scene is**.
+The semantic API tells SparkGlass **what the scene is**.
 
 The renderer decides **how many GPU passes are required**.
 
@@ -834,17 +834,17 @@ The renderer decides **how many GPU passes are required**.
 ## NOT PREFERRED
 
 ```c
-lg_draw_glass(ctx, &a);
-lg_draw_glass(ctx, &b);
-lg_draw_glass(ctx, &c);
+sg_draw_glass(ctx, &a);
+sg_draw_glass(ctx, &b);
+sg_draw_glass(ctx, &c);
 ```
 
-This hides the complete scene from LiquidGlass and limits optimization.
+This hides the complete scene from SparkGlass and limits optimization.
 
 ## PREFERRED
 
 ```c
-lg_render_frame(ctx, &frame);
+sg_render_frame(ctx, &frame);
 ```
 
 where `frame` describes all relevant glass containers/elements.
@@ -862,7 +862,7 @@ Benefits:
 
 ## FROZEN PRINCIPLE
 
-> **The host describes intent. LiquidGlass decides the render graph.**
+> **The host describes intent. SparkGlass decides the render graph.**
 
 The public ABI must never require the host to manually execute:
 
@@ -881,7 +881,7 @@ Those are internal implementation details.
 
 # 19. GEOMETRY MODEL
 
-LiquidGlass should understand material geometry, not UI widgets.
+SparkGlass should understand material geometry, not UI widgets.
 
 Possible `GlassElement` semantic data:
 
@@ -981,7 +981,7 @@ The preferred flow is:
 ```text
 host GPU texture
       ↓
-LiquidGlass samples texture
+SparkGlass samples texture
       ↓
 GPU material pipeline
       ↓
@@ -994,9 +994,9 @@ GPU output
 
 ## FROZEN OWNERSHIP RULE
 
-> The host owns externally supplied textures. LiquidGlass may sample them but must not destroy them.
+> The host owns externally supplied textures. SparkGlass may sample them but must not destroy them.
 
-For GL backend v1, an imported external texture must be valid in the same compatible GL context/share group used by LiquidGlass.
+For GL backend v1, an imported external texture must be valid in the same compatible GL context/share group used by SparkGlass.
 
 Important concerns to specify:
 
@@ -1019,11 +1019,11 @@ Preferred conceptual flow:
 ```text
 GLuint / host GL texture
           ↓
-lg_import_gl_texture(...)
+sg_import_gl_texture(...)
           ↓
-LGTextureHandle
+SGTextureHandle
           ↓
-scene/material references LGTextureHandle
+scene/material references SGTextureHandle
 ```
 
 This makes future backends possible.
@@ -1031,9 +1031,9 @@ This makes future backends possible.
 Possible future imports:
 
 ```text
-lg_import_gl_texture(...)
-lg_import_vulkan_image(...)
-lg_import_d3d_texture(...)
+sg_import_gl_texture(...)
+sg_import_vulkan_image(...)
+sg_import_d3d_texture(...)
 ```
 
 without redesigning `GlassElement`.
@@ -1065,7 +1065,7 @@ existing GPU texture
    ↓
 import/reference
    ↓
-LiquidGlass
+SparkGlass
 ```
 
 ---
@@ -1074,7 +1074,7 @@ LiquidGlass
 
 One of the most important unresolved contracts is:
 
-> **What exactly does `lg_render_frame()` render into?**
+> **What exactly does `sg_render_frame()` render into?**
 
 Possible models:
 
@@ -1083,7 +1083,7 @@ Possible models:
 ```text
 host binds target FBO
       ↓
-lg_render_frame()
+sg_render_frame()
 ```
 
 Advantages:
@@ -1102,7 +1102,7 @@ Disadvantages:
 ```text
 host passes target description
       ↓
-LiquidGlass binds/render/restores as specified
+SparkGlass binds/render/restores as specified
 ```
 
 Advantages:
@@ -1111,10 +1111,10 @@ Advantages:
 - easier to reason about;
 - easier validation.
 
-### C — LiquidGlass-owned output texture
+### C — SparkGlass-owned output texture
 
 ```text
-LiquidGlass renders to own output
+SparkGlass renders to own output
       ↓
 host composites output texture
 ```
@@ -1140,10 +1140,10 @@ Keep **scene semantics** independent from **backend render-target mechanics**.
 Conceptually:
 
 ```text
-LGScene
+SGScene
   └── glass semantics
 
-LGGLRenderTarget
+SGGLRenderTarget
   └── framebuffer/backend integration
 ```
 
@@ -1159,7 +1159,7 @@ Prefer a well-documented **premultiplied-alpha** output contract unless platform
 
 Why this matters:
 
-- native UI will be composed above/beside LiquidGlass;
+- native UI will be composed above/beside SparkGlass;
 - transparency edges must not produce dark halos;
 - blur/refraction output must composite predictably.
 
@@ -1193,9 +1193,9 @@ Do not silently assume “RGBA8 everywhere” is visually correct merely because
 
 ## FROZEN
 
-> **The host creates and owns the GL/GLES context. LiquidGlass uses the context that is current.**
+> **The host creates and owns the GL/GLES context. SparkGlass uses the context that is current.**
 
-LiquidGlass should not expose production APIs such as:
+SparkGlass should not expose production APIs such as:
 
 ```text
 create_window()
@@ -1212,7 +1212,7 @@ Those belong to the host/platform adapter.
 
 ## FROZEN
 
-GL-touching LiquidGlass operations must run synchronously on the host thread where the correct GL context is current.
+GL-touching SparkGlass operations must run synchronously on the host thread where the correct GL context is current.
 
 Preferred flow:
 
@@ -1221,10 +1221,10 @@ Host UI/render thread
         │
         │ context current
         ▼
-lg_render_frame(...)
+sg_render_frame(...)
         │
         ▼
-LiquidGlass issues GPU commands
+SparkGlass issues GPU commands
         │
         ▼
 return to host
@@ -1254,29 +1254,29 @@ A robust lifecycle likely needs to distinguish CPU-side state from GPU-side stat
 Conceptual lifecycle:
 
 ```text
-lg_create()
+sg_create()
    ↓
 Rust-side context exists
    ↓
 host makes GL context current
    ↓
-lg_initialize_gl(...)
+sg_initialize_gl(...)
    ↓
 GPU resources created
    ↓
-lg_render_frame(...)
+sg_render_frame(...)
    ↓
 ...
    ↓
 host makes correct GL context current
    ↓
-lg_release_gl_resources(...)
+sg_release_gl_resources(...)
    ↓
 host destroys/recreates platform GL context if needed
    ↓
-possibly lg_initialize_gl(...) again
+possibly sg_initialize_gl(...) again
    ↓
-lg_destroy()
+sg_destroy()
 ```
 
 ## OPEN
@@ -1317,7 +1317,7 @@ Do not expose:
 Preferred opaque type:
 
 ```c
-typedef struct LiquidGlassContext LiquidGlassContext;
+typedef struct SparkGlassContext SparkGlassContext;
 ```
 
 Internally Rust may hold any implementation it wants.
@@ -1335,13 +1335,13 @@ Use ABI-safe C/POD structs and pointer+count arrays for hot-path frame submissio
 Examples of semantic POD structures:
 
 ```text
-LGRect
-LGTransform
-LGColor
-LGGlassElement
-LGGlassContainer
-LGFrame
-LGRenderTarget
+SGRect
+SGTransform
+SGColor
+SGGlassElement
+SGGlassContainer
+SGFrame
+SGRenderTarget
 ```
 
 These names and layouts are **not final**.
@@ -1384,7 +1384,7 @@ Potential techniques:
 Example conceptual pattern:
 
 ```text
-LGFrame
+SGFrame
  ├── struct_size
  ├── version
  ├── flags
@@ -1502,7 +1502,7 @@ Do not treat this as frozen implementation.
 A fidelity-oriented internal plan may resemble:
 
 ```text
-                     LGScene
+                     SGScene
                         │
                         ▼
                  Geometry Stage
@@ -1539,7 +1539,7 @@ The real render graph must be based on measured needs of the existing visual eff
 
 # 37. GL STATE OWNERSHIP
 
-LiquidGlass is embedded in another renderer, so it cannot casually corrupt global GL state.
+SparkGlass is embedded in another renderer, so it cannot casually corrupt global GL state.
 
 Potential state touched:
 
@@ -1561,14 +1561,14 @@ Potential state touched:
 
 ### Option A — preserve everything
 
-LiquidGlass queries/saves/restores relevant host state.
+SparkGlass queries/saves/restores relevant host state.
 
 **Pros:** safe integration.  
 **Cons:** many `glGet*` calls may be costly and can force driver synchronization.
 
 ### Option B — documented state contract
 
-LiquidGlass documents exactly what it modifies, and the host adapter restores what it needs.
+SparkGlass documents exactly what it modifies, and the host adapter restores what it needs.
 
 **Pros:** efficient and explicit.  
 **Cons:** stronger host integration contract.
@@ -1605,7 +1605,7 @@ The host should provide:
 - scale factor;
 - target pixel dimensions where necessary.
 
-LiquidGlass converts consistently for GPU rendering.
+SparkGlass converts consistently for GPU rendering.
 
 Do not couple the core to:
 
@@ -1624,13 +1624,13 @@ Desired composition:
 Native toolkit composition
 │
 ├── backdrop/content
-├── LiquidGlass-rendered surface
+├── SparkGlass-rendered surface
 ├── native text
 ├── native buttons
 └── native interactive controls
 ```
 
-LiquidGlass provides the material canvas/effect.
+SparkGlass provides the material canvas/effect.
 
 GTK/WinUI continues to own widget semantics and input.
 
@@ -1657,7 +1657,7 @@ Potential semantic inputs:
 
 Do not expose a low-level animation engine prematurely.
 
-The host owns application animation timing; LiquidGlass may consume interaction/material state and render the correct optical response.
+The host owns application animation timing; SparkGlass may consume interaction/material state and render the correct optical response.
 
 ---
 
@@ -1759,7 +1759,7 @@ That exception must never leak into the production rendering path.
 
 # 44. VISUAL REGRESSION TESTING — CRITICAL
 
-Because appearance is priority #1, LiquidGlass should eventually have a visual validation suite.
+Because appearance is priority #1, SparkGlass should eventually have a visual validation suite.
 
 Test dimensions should include:
 
@@ -1829,7 +1829,7 @@ glutin
   ↓
 GL context
   ↓
-LiquidGlass core
+SparkGlass core
 ```
 
 Possible command:
@@ -1858,7 +1858,7 @@ Do not split into many crates until necessary.
 A reasonable starting organization:
 
 ```text
-LiquidGlass/
+SparkGlass/
 │
 ├── Cargo.toml
 │
@@ -1919,11 +1919,11 @@ Only after complexity justifies it:
 
 ```text
 crates/
-├── liquidglass-core/
-├── liquidglass-gl/
-├── liquidglass-ffi/
-├── liquidglass-vulkan/      # future
-└── platform-adapters/       # only if useful
+├── sparkglass-core/
+├── sparkglass-gl/
+├── sparkglass-ffi/
+├── sparkglass-vulkan/      # future
+└── platform-adapters/      # only if useful
 ```
 
 Do not create this split merely for architectural aesthetics.
@@ -1944,7 +1944,7 @@ A Windows/WinUI adapter may own:
 - presentation;
 - render scheduling.
 
-The LiquidGlass core should see:
+The SparkGlass core should see:
 
 ```text
 current GLES context
@@ -1969,7 +1969,7 @@ A GTK adapter may own:
 - frame scheduling;
 - extracting/current target information when required.
 
-LiquidGlass core should not include GTK types.
+SparkGlass core should not include GTK types.
 
 ---
 
@@ -2103,7 +2103,7 @@ Define:
 
 ### Exit condition
 
-A C/C++ host could theoretically call LiquidGlass without any Rust-specific knowledge.
+A C/C++ host could theoretically call SparkGlass without any Rust-specific knowledge.
 
 ---
 
@@ -2134,7 +2134,7 @@ Test:
 
 ### Exit condition
 
-LiquidGlass is demonstrably windowless while still easy to develop locally.
+SparkGlass is demonstrably windowless while still easy to develop locally.
 
 ---
 
@@ -2144,7 +2144,7 @@ Integrate with GTK 4 + `GtkGLArea`.
 
 ### Exit condition
 
-Native GTK controls can compose correctly over/around LiquidGlass with correct alpha and no CPU readback.
+Native GTK controls can compose correctly over/around SparkGlass with correct alpha and no CPU readback.
 
 ---
 
@@ -2161,7 +2161,7 @@ Vulkan
 
 ### Exit condition
 
-Same semantic LiquidGlass API works on Windows.
+Same semantic SparkGlass API works on Windows.
 
 ---
 
@@ -2218,7 +2218,7 @@ Is every visual feature required to work on strict GLES 3.0, or may quality tier
 
 ## B. Render target
 
-Current FBO, explicit FBO, LiquidGlass-owned output, or multiple modes?
+Current FBO, explicit FBO, SparkGlass-owned output, or multiple modes?
 
 > See `SparkGlass_IMPLEMENTATION_STATUS.md` → "The render-target bug" for a
 > real bug this ambiguity caused (a same-process pixel readback can look
@@ -2256,7 +2256,7 @@ Which values are stable semantic properties vs implementation-specific shader tu
 
 ## I. Context recreation
 
-Can one `LiquidGlassContext` survive a GL context recreation by reinitializing GPU state, or must it be rebuilt?
+Can one `SparkGlassContext` survive a GL context recreation by reinitializing GPU state, or must it be rebuilt?
 
 ## J. Alpha/compositor contract
 
@@ -2394,10 +2394,10 @@ When proposing a decision, explain:
 - Move rendering to CPU.
 - Use `glReadPixels()` in production frame rendering.
 - Make one OS implementation visually different simply because its API is easier.
-- Create one LiquidGlass context per button by default.
+- Create one SparkGlass context per button by default.
 - Couple `GlassElement` to WinUI or GTK widgets.
 - Create hidden windows/contexts inside the core library.
-- Make LiquidGlass own the host event loop.
+- Make SparkGlass own the host event loop.
 - Add an internal render thread without a proven requirement.
 - Require hosts to know internal pass ordering.
 - Freeze ABI structs around today's exact GLSL uniforms.
@@ -2410,7 +2410,7 @@ When proposing a decision, explain:
 
 # 59. SUCCESS CRITERIA
 
-LiquidGlass is successful when all of the following are true:
+SparkGlass is successful when all of the following are true:
 
 ### Visual
 
@@ -2463,7 +2463,7 @@ LiquidGlass is successful when all of the following are true:
                          current GL/GLES context
                                   │
                      ┌────────────▼────────────┐
-                     │     LIQUIDGLASS C ABI   │
+                     │     SPARKGLASS C ABI    │
                      └────────────┬────────────┘
                                   │
                      ┌────────────▼────────────┐
@@ -2504,7 +2504,7 @@ LiquidGlass is successful when all of the following are true:
 
 # 61. THE ONE-SENTENCE ARCHITECTURE
 
-> **LiquidGlass is a windowless, GPU-resident, scene-aware visual material engine in Rust that receives host-owned GPU backdrop resources and glass geometry through a stable C ABI, renders Apple-style Liquid Glass using an internally controlled multi-pass/SDF pipeline inside a host-owned graphics context, and keeps platform/UI/context ownership outside the core.**
+> **SparkGlass is a windowless, GPU-resident, scene-aware visual material engine in Rust that receives host-owned GPU backdrop resources and glass geometry through a stable C ABI, renders Apple-style Liquid Glass using an internally controlled multi-pass/SDF pipeline inside a host-owned graphics context, and keeps platform/UI/context ownership outside the core.**
 
 ---
 
@@ -2518,7 +2518,7 @@ LiquidGlass is successful when all of the following are true:
 
 ## Project context
 
-- Original LiquidGlass Architectural Design Brief — source document used to produce this master specification.
+- Original SparkGlass Architectural Design Brief — source document used to produce this master specification.
 - GoosicReborn: https://github.com/AnalogicGoose/GoosicReborn/tree/development
 
 ## Apple — public documentation

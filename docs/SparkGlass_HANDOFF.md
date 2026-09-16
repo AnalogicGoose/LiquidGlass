@@ -37,7 +37,7 @@ unrelated learning-exercise crates). That means:
   dependencies, because cargo isn't using it.
 - Don't run `cargo build --workspace` unless you actually want to compile
   the unrelated sibling crates too (`hello_world`, `data_types`, etc.) — use
-  `-p spark_glass_poc` or just build from inside the crate directory without
+  `-p spark_glass` or just build from inside the crate directory without
   `--workspace`.
 - Binaries end up at
   `~/Dev/PersonalProyects/RustProjects/Learning/target/debug/...`, not
@@ -45,8 +45,8 @@ unrelated learning-exercise crates). That means:
 
 ### 2. The GitHub repo was renamed mid-session
 
-`origin` still points at `git@github-personal:AnalogicGoose/LiquidGlass.git`.
-GitHub redirects pushes/fetches to the real location,
+`origin` still points at `git@github-personal:AnalogicGoose/LiquidGlass.git`
+(the repo's old name). GitHub redirects pushes/fetches to the real location,
 `git@github-personal:AnalogicGoose/SparkGlass.git`, and prints a warning each
 time — that warning is expected, not an error. Repointing the remote was
 attempted once and denied by the auto-mode permission classifier (repo
@@ -129,9 +129,9 @@ this exchange) or whether the user's situation has changed since.
 The pattern used throughout this session, worth repeating for any future
 change to the renderer or its host integrations:
 
-1. `cargo build -p spark_glass_poc --bins --examples --lib` (no
+1. `cargo build -p spark_glass --bins --examples --lib` (no
    `--workspace`) — clean, no warnings.
-2. `cargo test -p spark_glass_poc --lib` — passes.
+2. `cargo test -p spark_glass --lib` — passes.
 3. Run the affected example(s) with `SPARK_GLASS_SANDBOX_CAPTURE=<path>` set,
    `cmp` the PNG against a known-good prior capture (or against another
    backend's capture, since they're all supposed to match byte-for-byte).
