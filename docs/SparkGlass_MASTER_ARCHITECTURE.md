@@ -2220,9 +2220,19 @@ Is every visual feature required to work on strict GLES 3.0, or may quality tier
 
 Current FBO, explicit FBO, LiquidGlass-owned output, or multiple modes?
 
+> See `SparkGlass_IMPLEMENTATION_STATUS.md` → "The render-target bug" for a
+> real bug this ambiguity caused (a same-process pixel readback can look
+> correct while the host's actual framebuffer never gets written) and how
+> option A is implemented today.
+
 ## C. GL state contract
 
 Full preservation, documented subset, or optional modes?
+
+> See `SparkGlass_IMPLEMENTATION_STATUS.md` → "GL state isolation
+> experiment" for partial empirical evidence from a real GTK4 host: native
+> widgets composited correctly with zero state save/restore on our side.
+> One data point, not a closed decision.
 
 ## D. Color space
 
