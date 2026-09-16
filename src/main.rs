@@ -598,7 +598,15 @@ async fn main() {
             widgets::Window::new(hash!(), vec2(16.0, 16.0), panel_size)
                 .label("SparkGlass Config")
                 .titlebar(true)
-                .movable(true)
+                // Deliberately NOT movable: config_panel_glass() below
+                // renders a real GlassSurface at this same fixed position
+                // to back the panel, and macroquad's Window tracks a
+                // dragged position entirely internally (Window/
+                // WindowContext are both pub(crate) — no public API to
+                // read it back), so there's no way to keep the glass in
+                // sync with a draggable panel. A fixed, glass-backed panel
+                // beat a movable, un-synced one.
+                .movable(false)
                 .ui(&mut root_ui(), |ui| {
                     widgets::Label::new(format!("Demo: {}", demo_scene.label())).ui(ui);
                     if widgets::Button::new("< Prev").ui(ui) {
