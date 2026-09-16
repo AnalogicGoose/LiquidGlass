@@ -17,7 +17,9 @@ The renderer, the `glow` GL backend, the C ABI, and Linux (GTK4) integration are
 
 Full details, what's still missing, and how each claim above was verified: **[`docs/SparkGlass_IMPLEMENTATION_STATUS.md`](docs/SparkGlass_IMPLEMENTATION_STATUS.md)**.
 
-The architectural rationale — why the host owns the context, why SDF, why GL before Vulkan, the full phase plan, and what AI agents or contributors should never do to this codebase: **[`docs/SparkGlass_MASTER_ARCHITECTURE.md`](docs/SparkGlass_MASTER_ARCHITECTURE.md)**.
+The architectural rationale — why the host owns the context, why SDF, why GL before Vulkan, and what AI agents or contributors should never do to this codebase: **[`docs/SparkGlass_MASTER_ARCHITECTURE.md`](docs/SparkGlass_MASTER_ARCHITECTURE.md)**.
+
+The active phase-by-phase development plan, including the current top priority (Apple Material Fidelity): **[`docs/SparkGlass_ROADMAP.md`](docs/SparkGlass_ROADMAP.md)**.
 
 ## Quick start
 

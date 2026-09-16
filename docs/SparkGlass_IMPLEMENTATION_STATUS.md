@@ -1,21 +1,23 @@
 # SparkGlass — Implementation Status
 
-> Companion to [`SparkGlass_MASTER_ARCHITECTURE.md`](SparkGlass_MASTER_ARCHITECTURE.md), which is the design rationale and changes rarely. This document tracks what has actually been built and verified against that design, and is expected to change often. Phase numbers match §54 of the master doc.
+> Companion to [`SparkGlass_MASTER_ARCHITECTURE.md`](SparkGlass_MASTER_ARCHITECTURE.md) (design rationale, changes rarely) and [`SparkGlass_ROADMAP.md`](SparkGlass_ROADMAP.md) (the authoritative phase plan from Phase 8 onward — it renumbers/expands what the master doc calls "Phase 8" into Phases 8–11 plus several supporting sections; where the two disagree on phase numbering, the roadmap wins, since it's newer). This document tracks what has actually been built and verified, and is expected to change often. Phase numbers below follow the roadmap.
 
 ## Summary
 
 | Phase | What | Status |
 |---|---|---|
 | 0 | Preserve the Macroquad reference | Done — `cargo run` is still the visual baseline |
-| 1 | Freeze scene/material semantics | Mostly done informally in `src/glass.rs`; not yet frozen on purpose |
+| 1 | Semantic scene model | Mostly done informally in `src/glass.rs`; not yet frozen on purpose |
 | 2 | C ABI v0 | Done — `src/ffi/`, proven from a real C program, not just Rust |
 | 3 | `glow` GL renderer | Done — `src/backend/gl/` |
-| 4 | Standalone windowless-core sandbox | Done — `examples/sandbox.rs` |
+| 4 | Standalone windowless-core sandbox | Done — `examples/sandbox.rs` (visual regression framework itself not built yet) |
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
 | 6 | Windows (WinUI 3 + ANGLE) integration | Not started — no Windows environment available to build or verify against |
 | 7 | GoosicReborn integration | Not started |
-| 8 | Advanced fidelity/performance | Not started |
-| 9 | Native Vulkan backend | Not started (not the current target per the master doc) |
+| 8 | Apple Material Fidelity | **Started** — 8.1 (Material Style System) in progress, see below |
+| 9 | Container interaction + motion | Not started (blocked on container/grouping semantics, which don't exist in the renderer yet) |
+| 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
+| 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
 Everything below is either implemented-and-verified or an explicit gap — nothing here is aspirational. If it doesn't have a "Status" note, it hasn't been built.
 
@@ -136,6 +138,54 @@ frame — see "GL state isolation" below for what that showed.
 
 **Not done:** the GLX fallback path for X11 sessions (only EGL is wired up;
 Wayland is what this was validated on).
+
+---
+
+## Phase 8.1 — Material Style System (in progress)
+
+Per `SparkGlass_ROADMAP.md`'s Phase 8.1: "stop treating every glass surface
+as the same material profile." Found and fixed a real instance of exactly
+that in every example scene.
+
+**The bug:** every demo scene (`sandbox.rs`, `gtk_glarea.rs`,
+`ffi_smoke.rs`) computed one `preset(GlassStyle::Regular, ...)` (or, in
+`ffi_smoke.rs`, one set of hand-written literals) and reused it verbatim for
+*both* the large panel (`GlassStyle::Regular`) and the small pill
+(`GlassStyle::Control`). The two surfaces only ever differed in size, never
+in material — directly contradicting Phase 8.1's own acceptance criterion
+("a small control pill and a large navigation bar should not look like the
+same shader merely scaled to different dimensions").
+
+**The fix:**
+- `preset()` in `src/glass.rs` now buckets `GlassStyle::Control` with
+  `GlassStyle::Thin` (frost 6, tint 0.15) instead of with `Regular`/
+  `Navigation` (frost 16, tint 1.0) — matching the Figma reference's own
+  size-class split (`Frost - Regular` vs `Frost - Large`; see
+  `docs/references/figma-liquid-glass/README.md`). This is evidence-based,
+  not a guess: 6 and 16 are exactly the two frost values the Figma file
+  uses, just previously assigned to the wrong buckets in our code.
+- Every example now calls `preset()` once per surface's actual style
+  instead of once for the whole scene, and the FFI smoke test's hand-written
+  `SGGlassElement` literals were updated to match (`frost_radius: 16.0`,
+  `tint_opacity: 1.0` for the Regular panel; the Control pill's literals
+  already happened to match the corrected values).
+
+**Verified:** `scripts/verify_backends.sh` still passes — `sandbox`,
+`ffi_smoke`, and `gtk_glarea` remain byte-identical to each other (the fix
+was applied identically to all three, so cross-backend parity holds, just
+at corrected values). Confirmed with a real screenshot that the panel and
+pill are now visibly different — the panel properly frosted/white-tinted,
+the pill staying much clearer — instead of looking identical apart from
+size.
+
+**Not done:** `refraction_strength`/`depth`/`dispersion`/lighting are still
+flat across all styles. Per the Figma evidence this is *correct* (those
+values were identical across every instance checked in the reference file),
+so this isn't a known gap — just noting it wasn't re-derived from scratch,
+only frost/tint were. The container/interaction fields Phase 9 will need,
+and any per-style tuning beyond frost/tint (e.g. distinct highlight
+strength or edge response per style, per the roadmap's Phase 8.1 "tune per
+style" list), remain undone.
 
 ---
 

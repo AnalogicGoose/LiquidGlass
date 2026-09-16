@@ -178,10 +178,18 @@ impl GlassScene {
 
 /// Sane semantic defaults. Product code should choose these rather than pass
 /// shader constants around.
+///
+/// Frost/tint are bucketed by size class, matching the Figma reference's own
+/// `Frost - Regular` (6, small pill-sized controls) vs `Frost - Large` (16,
+/// full panels) split — see `docs/references/figma-liquid-glass/README.md`.
+/// `refraction_strength`/`depth`/`dispersion`/lighting stay flat across
+/// styles below because that also matches the reference: those values were
+/// identical across every instance checked there, regardless of size or
+/// light/dark variant.
 pub fn preset(style: GlassStyle, dark_tint: bool) -> (GlassMaterial, GlassOptics, GlassLighting) {
     let (frost_radius, tint_opacity) = match style {
-        GlassStyle::Thin => (6.0, 0.15),
-        GlassStyle::Regular | GlassStyle::Control | GlassStyle::Navigation => (16.0, 1.0),
+        GlassStyle::Thin | GlassStyle::Control => (6.0, 0.15),
+        GlassStyle::Regular | GlassStyle::Navigation => (16.0, 1.0),
         GlassStyle::Prominent => (22.0, 1.0),
     };
     (

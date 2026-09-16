@@ -78,19 +78,10 @@ impl GlLoader {
 }
 
 fn build_scene(width: f32, height: f32) -> GlassScene {
-    // Matches the "Clear" profile in main.rs, for the same reason as the
-    // other examples: directly comparable captures across every backend.
-    let (mut material, mut optics, mut lighting) = preset(GlassStyle::Regular, false);
-    material.frost_radius = 6.0;
-    material.tint_opacity = 0.15;
-    material.dark_tint = false;
-    optics.refraction_strength = 2.0;
-    optics.depth = 30.0;
-    optics.dispersion = 0.2;
-    lighting.intensity = 0.25;
-    lighting.angle_degrees = 0.0;
-    lighting.splay = 0.2;
-    lighting.shadow_strength = 1.0;
+    // Phase 8.1 (docs/SparkGlass_ROADMAP.md): each surface gets its own
+    // style's preset instead of one profile stamped onto every surface.
+    let (panel_material, panel_optics, panel_lighting) = preset(GlassStyle::Regular, false);
+    let (pill_material, pill_optics, pill_lighting) = preset(GlassStyle::Control, false);
 
     GlassScene::new(vec![
         GlassSurface {
@@ -101,9 +92,9 @@ fn build_scene(width: f32, height: f32) -> GlassScene {
                 radius: 34.0,
                 smoothing: 0.6,
             },
-            material,
-            optics,
-            lighting,
+            material: panel_material,
+            optics: panel_optics,
+            lighting: panel_lighting,
             interaction: GlassInteraction::Idle,
             style: GlassStyle::Regular,
         },
@@ -115,9 +106,9 @@ fn build_scene(width: f32, height: f32) -> GlassScene {
                 radius: 44.0,
                 smoothing: 0.0,
             },
-            material,
-            optics,
-            lighting,
+            material: pill_material,
+            optics: pill_optics,
+            lighting: pill_lighting,
             interaction: GlassInteraction::Idle,
             style: GlassStyle::Control,
         },

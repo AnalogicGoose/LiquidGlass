@@ -55,17 +55,7 @@ impl GlLoader {
 }
 
 fn build_scene(width: f32, height: f32) -> GlassScene {
-    let (mut material, mut optics, mut lighting) = preset(GlassStyle::Regular, false);
-    material.frost_radius = 6.0;
-    material.tint_opacity = 0.15;
-    material.dark_tint = false;
-    optics.refraction_strength = 2.0;
-    optics.depth = 30.0;
-    optics.dispersion = 0.2;
-    lighting.intensity = 0.25;
-    lighting.angle_degrees = 0.0;
-    lighting.splay = 0.2;
-    lighting.shadow_strength = 1.0;
+    let (material, optics, lighting) = preset(GlassStyle::Regular, false);
 
     GlassScene::new(vec![GlassSurface {
         id: 1,

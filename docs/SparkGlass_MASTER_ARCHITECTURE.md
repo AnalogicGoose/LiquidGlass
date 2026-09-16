@@ -2179,6 +2179,16 @@ If yes, the architecture boundary is working.
 
 ## Phase 8 — advanced fidelity/performance
 
+> **Superseded by `SparkGlass_ROADMAP.md`.** That document is the
+> authoritative, detailed plan for this phase going forward — it expands
+> this single phase into Phases 8 ("Apple Material Fidelity", with 8.1–8.9
+> sub-phases), 9 ("Container Interaction + Motion"), 10 ("Performance
+> Architecture"), and 11 ("Vulkan / Future Backend Investigation"), plus
+> supporting sections on the render-target contract, GL state contract,
+> testing matrix, and visual acceptance criteria. Phase 8.1 (Material Style
+> System) is in progress — see `SparkGlass_IMPLEMENTATION_STATUS.md`. This
+> section is kept for history; don't plan against it directly.
+
 Potential features:
 
 - adaptive luminance;

@@ -145,6 +145,14 @@ impl ApplicationHandler for App {
                 let size = state.window.inner_size();
                 let (w, h) = (size.width as f32, size.height as f32);
 
+                // Phase 8.1 (docs/SparkGlass_ROADMAP.md): the panel (Regular,
+                // large) and the pill (Control, small) get different
+                // frost/tint, matching the Figma reference's own size-class
+                // split (`Frost - Large`: 16 vs `Frost - Regular`: 6) instead
+                // of one profile stamped onto both — see `preset()` in
+                // `src/glass.rs`, which these literals mirror (this FFI
+                // struct is constructed by hand rather than via `preset()`,
+                // since it's exercising the extern "C" boundary).
                 let elements = [
                     SGGlassElement {
                         id: 1,
@@ -157,11 +165,11 @@ impl ApplicationHandler for App {
                         refraction_strength: 2.0,
                         depth: 30.0,
                         dispersion: 0.2,
-                        frost_radius: 6.0,
+                        frost_radius: 16.0,
                         light_intensity: 0.25,
                         light_angle_degrees: 0.0,
                         light_splay: 0.2,
-                        tint_opacity: 0.15,
+                        tint_opacity: 1.0,
                         dark_tint: 0,
                         shadow_strength: 1.0,
                     },

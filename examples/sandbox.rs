@@ -126,20 +126,12 @@ impl ApplicationHandler for App {
         renderer.draw_backdrop(&gl, background, background_size);
 
         let (w, h) = (size.width as f32, size.height as f32);
-        // Matches `main.rs`'s "Clear" profile exactly, so a sandbox capture
-        // is directly comparable to a Macroquad-reference capture instead of
-        // comparing against unrelated preset() defaults.
-        let (mut material, mut optics, mut lighting) = preset(GlassStyle::Regular, false);
-        material.frost_radius = 6.0;
-        material.tint_opacity = 0.15;
-        material.dark_tint = false;
-        optics.refraction_strength = 2.0;
-        optics.depth = 30.0;
-        optics.dispersion = 0.2;
-        lighting.intensity = 0.25;
-        lighting.angle_degrees = 0.0;
-        lighting.splay = 0.2;
-        lighting.shadow_strength = 1.0;
+        // Phase 8.1 (docs/SparkGlass_ROADMAP.md): each surface gets its own
+        // style's preset instead of one profile stamped onto every surface
+        // — a large Regular panel and a small Control pill are not the same
+        // material merely scaled to different dimensions.
+        let (panel_material, panel_optics, panel_lighting) = preset(GlassStyle::Regular, false);
+        let (pill_material, pill_optics, pill_lighting) = preset(GlassStyle::Control, false);
         let scene = GlassScene::new(vec![
             GlassSurface {
                 id: 1,
@@ -149,9 +141,9 @@ impl ApplicationHandler for App {
                     radius: 34.0,
                     smoothing: 0.6,
                 },
-                material,
-                optics,
-                lighting,
+                material: panel_material,
+                optics: panel_optics,
+                lighting: panel_lighting,
                 interaction: GlassInteraction::Idle,
                 style: GlassStyle::Regular,
             },
@@ -163,9 +155,9 @@ impl ApplicationHandler for App {
                     radius: 44.0,
                     smoothing: 0.0,
                 },
-                material,
-                optics,
-                lighting,
+                material: pill_material,
+                optics: pill_optics,
+                lighting: pill_lighting,
                 interaction: GlassInteraction::Idle,
                 style: GlassStyle::Control,
             },
