@@ -111,12 +111,19 @@ abrupt kills in a row left the compositor's Wayland state degraded for
 *new* toplevel surfaces specifically, from this client. Never got to root
 cause it further or confirm a fix (a session logout/re-login would very
 likely clear it, but that's the user's call, not something to do
-unilaterally). **Lesson: prefer closing test windows normally (send a close
-event / let the app's own exit path with `event_loop.exit()` run) over
-`pkill -9` where possible, and if `-9` is truly needed, don't lean on it
-dozens of times in one session** — and if windowed examples start hanging
-for no code-side reason, check whether this is why before assuming
-something broke.
+unilaterally). **Update: it cleared on its own** — after switching to only
+using the auto-exiting capture path (`SPARK_GLASS_SANDBOX_CAPTURE=<path>`,
+which calls `event_loop.exit()`/`std::process::exit(0)` itself once it's
+captured a frame, needing no `pkill` at all) and just waiting, a retest of
+`sandbox` worked normally again, byte-identical to golden, and the full
+`scripts/verify_backends.sh` (all three windowed backends plus `c_smoke`)
+passed clean afterward. So it was transient, not a lasting compositor
+problem — but the lesson stands regardless: **prefer closing test windows
+normally over `pkill -9`, and if `-9` is truly needed, don't lean on it
+dozens of times in one session.** If a windowed example starts hanging for
+no code-side reason, this is the first thing to suspect — try the headless
+tools first to confirm the code itself is fine, then just wait a bit and
+retry the windowed one before assuming something is actually broken.
 
 ## Who owns what, architecturally
 
@@ -135,17 +142,15 @@ not improvising an answer solo.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`12591fa` as of this
+1. **Nothing is currently broken** — the last commit (`e1af80b` as of this
    writing) left everything building clean and passing every regression
-   check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
-   from any angle below. **Except:** on-screen windowed examples are hanging
-   on startup right now due to the Wayland/compositor state issue in item 5
-   above — this is environmental, not a code problem (proven by the headless
-   regression tools still passing clean). Check whether that's resolved
-   (e.g. after a session restart) before assuming a windowed example is
-   actually broken; use `scripts/visual_regression.sh` and
-   `scripts/verify_backends.sh`'s non-windowed checks (`c_smoke`, unit
-   tests) for verification in the meantime.
+   check described in `SparkGlass_IMPLEMENTATION_STATUS.md`, including all
+   three windowed backends (the transient compositor hang in item 5 above
+   cleared on its own later in the session). Safe to pick up from any angle
+   below. If windowed examples start hanging again for no code-side reason,
+   see item 5's update for what to check before assuming something broke.
+   `scripts/visual_regression.sh`'s headless checks remain reliable
+   regardless.
 2. **`docs/SparkGlass_ROADMAP.md` is now the authoritative phase plan from
    Phase 8 onward** — it supersedes the master doc's old Phase 8 section
    (which now says so explicitly). Phase 8.1 (Material Style System) is
@@ -156,8 +161,13 @@ not improvising an answer solo.
    highlight strength, edge response, chromatic behavior, shadow) is
    untouched — those still don't vary by style, and there's no reference
    evidence yet for what they should be per-style specifically. Phase 8.2
-   (Optical Calibration) is exactly the Refraction/Opacity mystery from
-   `docs/references/figma-liquid-glass/README.md` — still unresolved.
+   (Optical Calibration) — the Refraction/Opacity mystery from
+   `docs/references/figma-liquid-glass/README.md` — has its tooling built
+   now too: `cargo run --example parameter_sweep` renders both parameters
+   across a range of candidate values for side-by-side comparison against
+   the Figma reference. Nobody's actually run that comparison and picked
+   values yet — that's deliberately a human step (the roadmap says so
+   explicitly), so it's still open.
 3. **Figma reference material exists** at `docs/references/`: the actual
    file the shader constants were almost certainly calibrated against
    (same source photo as `assets/image1.jpg`, components named/sized to
@@ -173,13 +183,24 @@ not improvising an answer solo.
    it, documented in that README: composited (not isolated) screenshots need
    a shared parent frame in the Figma file, and `get_variable_defs` only
    returns locally-overridden values, never the full inherited set.
-4. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
-   found and fixed: `GlassScene::new` was fabricating a hardcoded demo
-   `GlassGroup` nothing ever read. Go through the rest of the roadmap's
-   Phase 1 checklist (Scene / Backdrop / Container / GlassElement / Material
-   / TextureHandle / RenderTarget) the same way — grep for who actually
-   reads each field before trusting a doc comment about it.
-5. ~~Automate the regression checks~~ — done, see `scripts/verify_backends.sh`.
+4. **Phase 1 (freeze semantics) audit — 2 rounds done, not finished.**
+   Round 1: `GlassScene::new` was fabricating a hardcoded demo `GlassGroup`
+   nothing ever read — fixed. Round 2: `GlassMaterial::saturation`/
+   `brightness`/`contrast`, `GlassOptics::surface_curvature`, and
+   `GlassSurface::interaction` have zero corresponding shader uniform —
+   not removed, but now documented on the fields so nobody assumes they
+   work. `reduced_transparency` confirmed genuinely wired;
+   `reduced_motion` confirmed not (no motion system exists yet for it to
+   affect). Backdrop/TextureHandle-beyond-FFI/RenderTarget haven't had this
+   treatment yet — same method: grep every field's write-sites against its
+   read-sites before trusting what a doc comment claims.
+5. ~~Automate the regression checks~~ — done, see `scripts/verify_backends.sh`
+   and `scripts/visual_regression.sh` (the latter is a *different* check —
+   catches unintended changes to the renderer's own output over time, not
+   cross-backend divergence; see `SparkGlass_IMPLEMENTATION_STATUS.md`'s
+   Phase 4 section for the distinction and why `-metric RMSE` is used
+   instead of `-metric AE`, which is unreliable on this environment's
+   ImageMagick build).
 6. **§37 GL state contract / roadmap §13** — the overlay experiment
    (`examples/gtk_glarea_overlay.rs`) is one data point on GTK4/Mesa/Wayland.
    Worth checking whether a heavier native-widget scene (more widgets,
@@ -193,6 +214,10 @@ not improvising an answer solo.
    not existing in the renderer at all yet (`GlassGroup` is dead data, per
    item 4) — this is substantial architecture work on its own, per the
    roadmap's own framing, not something to fold casually into other phases.
+9. **Phase 8.2 calibration itself** — `cargo run --example parameter_sweep`
+   generates the comparison candidates; running that and actually picking
+   values against `docs/references/figma-liquid-glass/` is still open,
+   deliberately left as a human step (see item 2).
 
 ## How to verify a change is real, not just "it compiled"
 
