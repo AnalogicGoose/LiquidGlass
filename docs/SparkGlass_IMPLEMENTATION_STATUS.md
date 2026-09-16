@@ -193,6 +193,24 @@ point toward "documented minimal state contract," not a closed decision.
 
 ---
 
+## Automated regression check
+
+`scripts/verify_backends.sh` automates what had been a manual `cmp`-by-hand
+process throughout this work: it builds everything, captures `sandbox`,
+`ffi_smoke`, and (if a display is available) `gtk_glarea`, asserts they're
+byte-identical, rebuilds and runs `c_smoke`, and runs the unit tests. Run it
+after any renderer/backend/ABI change:
+
+```bash
+scripts/verify_backends.sh
+```
+
+It does **not** replace an external-screenshot check of anything touching
+`render()`/`present()`/framebuffer binding specifically — see "The
+render-target bug" above for exactly why a same-process capture can't catch
+that class of bug, and `docs/SparkGlass_HANDOFF.md` for the verification
+checklist to use instead in that case.
+
 ## Environment notes for whoever runs this next
 
 - The examples need a real GL/GLES-capable display. This was all developed

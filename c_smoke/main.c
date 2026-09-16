@@ -10,7 +10,7 @@
  * Build & run (from the repository root):
  *   cargo build --lib
  *   gcc c_smoke/main.c -Iinclude -lEGL -lGLESv2 \
- *       -L$(cargo metadata --no-deps --format-version1 | python3 -c \
+ *       -L$(cargo metadata --no-deps --format-version 1 | python3 -c \
  *           'import json,sys;print(json.load(sys.stdin)["target_directory"])')/debug \
  *       -lspark_glass_poc -Wl,-rpath,'$ORIGIN' -o /tmp/spark_glass_c_smoke
  *   LD_LIBRARY_PATH=<target-dir>/debug /tmp/spark_glass_c_smoke
