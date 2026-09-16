@@ -156,13 +156,23 @@ jobs:
           Copy-Item target\release\spark_glass.dll .
           Copy-Item "${{ steps.vcpkg.outputs.root }}\bin\libEGL.dll" .
           Copy-Item "${{ steps.vcpkg.outputs.root }}\bin\libGLESv2.dll" .
+          # ANGLE's D3D11 backend needs d3dcompiler_47.dll at runtime (HLSL
+          # compilation) — it's a transitive dependency of libGLESv2.dll,
+          # so it never showed up in `dumpbin /dependents` on c_smoke.exe
+          # or spark_glass.dll directly (see the previous run's diagnostic
+          # step, now confirmed: exit code -1073741515 = STATUS_DLL_NOT_FOUND).
+          # Not guaranteed present system-wide, but always shipped with the
+          # Windows SDK, which this runner already has.
+          $d3dcompiler = Get-ChildItem -Recurse -Filter "d3dcompiler_47.dll" `
+            "C:\Program Files (x86)\Windows Kits\10\Redist" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "x64" } | Select-Object -First 1
+          if (-not $d3dcompiler) { throw "d3dcompiler_47.dll not found under the Windows Kits redist directory" }
+          Copy-Item $d3dcompiler.FullName .
       - name: Check DLL dependencies before running
-        # First run of this job produced zero output — not even c_smoke's
-        # own first fprintf, which only happens after a hard crash (a
-        # graceful `return 1` always prints something first, and the CRT
-        # flushes stdio on normal exit even when redirected/fully
-        # buffered). Most likely a missing dependency DLL, so check that
-        # explicitly before trying again.
+        # Kept even after finding the d3dcompiler_47.dll gap (see above) —
+        # dumpbin only shows *direct* link-time dependencies, so it won't
+        # catch every transitive one, but it's still the first thing to
+        # check if this ever regresses again.
         shell: pwsh
         run: |
           dumpbin /dependents c_smoke.exe
