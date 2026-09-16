@@ -28,11 +28,24 @@ impl Param {
         }
     }
 }
+#[derive(Clone, Copy)]
 struct GlassProfile {
     name: &'static str,
     values: [f32; 9],
     dark: bool,
 }
+const PARAM_NAMES: [&str; 9] = [
+    "refraction",
+    "depth",
+    "dispersion",
+    "frost",
+    "light_intensity",
+    "light_angle",
+    "splay",
+    "tint",
+    "shadow",
+];
+const TUNED_PROFILES_PATH: &str = "tests/tuned_profiles.txt";
 const PROFILES: [GlassProfile; 3] = [
     GlassProfile {
         name: "Clear",
@@ -127,6 +140,32 @@ fn apply_tuning(scene: &mut GlassScene, params: &[Param], dark: bool) {
     }
 }
 
+/// Config mode: writes the live-tuned state of all 3 profiles to a plain
+/// text file, so a value tuned by eye against a reference image doesn't
+/// have to be read off the HUD and retyped by hand. Format is deliberately
+/// simple (not TOML/JSON) — no new dependency, easy for a human to read,
+/// easy for an AI session to parse back out afterward.
+fn save_profiles(profiles: &[GlassProfile; 3]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut out = String::new();
+    out.push_str("# SparkGlass tuned profiles\n");
+    out.push_str("# Saved interactively from `cargo run` (press S in the HUD) — not committed to git.\n");
+    out.push_str("# To apply: read this file and update src/glass.rs's preset() / main.rs's PROFILES accordingly.\n\n");
+    for profile in profiles {
+        out.push_str(&format!("[{}]\n", profile.name));
+        out.push_str(&format!("dark = {}\n", profile.dark));
+        for (name, value) in PARAM_NAMES.iter().zip(profile.values) {
+            out.push_str(&format!("{name} = {value:.3}\n"));
+        }
+        out.push('\n');
+    }
+    if let Some(parent) = std::path::Path::new(TUNED_PROFILES_PATH).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = std::fs::File::create(TUNED_PROFILES_PATH)?;
+    file.write_all(out.as_bytes())
+}
+
 fn draw_hud(
     params: &[Param],
     selected: usize,
@@ -134,8 +173,23 @@ fn draw_hud(
     profile: &str,
     dark: bool,
     scene: &GlassScene,
+    save_message: Option<&str>,
 ) {
-    let lines = params.len() as f32 + 7.;
+    // The HUD sits on its own glass panel (debug_hud_surface), which is
+    // frosted enough to show whatever's behind it through — so the right
+    // text color depends on the *backdrop*, not on `dark`. But `dark` is
+    // the best proxy available here without sampling pixels back from the
+    // GPU (which the normal render path must never do), and in practice it
+    // tracks what the user is looking at closely enough to fix the actual
+    // complaint: white-on-white was unreadable against the light "Clear"
+    // profile.
+    let (text_color, selected_color, hint_color) = if dark {
+        (WHITE, YELLOW, LIGHTGRAY)
+    } else {
+        (BLACK, Color::new(0.55, 0.35, 0.0, 1.0), DARKGRAY)
+    };
+
+    let lines = params.len() as f32 + 8. + if save_message.is_some() { 1. } else { 0. };
     let line_h = 20.;
     let (x, y) = (16., screen_height() - 16. - lines * line_h - 12.);
     let mut ty = y + 22.;
@@ -150,7 +204,7 @@ fn draw_hud(
             x + 8.,
             ty,
             20.,
-            if i == selected { YELLOW } else { WHITE },
+            if i == selected { selected_color } else { text_color },
         );
         ty += line_h;
     }
@@ -161,10 +215,13 @@ fn draw_hud(
         format!("Quality {:?}  [Q]", scene.quality),
         "Drag panels with the mouse".to_owned(),
         "Arrows: select / adjust  H: hide".to_owned(),
-        "D: scene debug".to_owned(),
+        "D: scene debug   S: save all 3 profiles".to_owned(),
     ] {
-        draw_text(&line, x + 8., ty, 18., LIGHTGRAY);
+        draw_text(&line, x + 8., ty, 18., hint_color);
         ty += line_h;
+    }
+    if let Some(message) = save_message {
+        draw_text(message, x + 8., ty, 18., if dark { GREEN } else { DARKGREEN });
     }
 }
 fn draw_debug(scene: &GlassScene) {
@@ -259,7 +316,13 @@ async fn main() {
     ];
     let (mut selected, mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
         (0usize, true, false, false, 0usize, None::<Vec2>);
-    apply_profile(&PROFILES[profile], &mut params, &mut dark);
+    // Config mode: a runtime-mutable copy of PROFILES. Every parameter edit
+    // below is written back into `profiles[profile]` immediately, so all 3
+    // profiles keep their own live-tuned state as you switch between them
+    // with P, and S dumps that whole array to disk on demand.
+    let mut profiles = PROFILES;
+    let mut save_message: Option<String> = None;
+    apply_profile(&profiles[profile], &mut params, &mut dark);
     if let Ok(value) = std::env::var("SPARK_GLASS_TEST_FROST")
         && let Ok(frost) = value.parse::<f32>()
     {
@@ -287,10 +350,17 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::T) {
             dark = !dark;
+            profiles[profile].dark = dark;
         }
         if is_key_pressed(KeyCode::P) {
-            profile = (profile + 1) % PROFILES.len();
-            apply_profile(&PROFILES[profile], &mut params, &mut dark);
+            profile = (profile + 1) % profiles.len();
+            apply_profile(&profiles[profile], &mut params, &mut dark);
+        }
+        if is_key_pressed(KeyCode::S) {
+            save_message = Some(match save_profiles(&profiles) {
+                Ok(()) => format!("Saved {TUNED_PROFILES_PATH}"),
+                Err(e) => format!("Save failed: {e}"),
+            });
         }
         if is_key_pressed(KeyCode::Q) {
             scene.quality = match scene.quality {
@@ -310,10 +380,12 @@ async fn main() {
         if is_key_down(KeyCode::Right) {
             let p = &mut params[selected];
             p.value = (p.value + p.speed * dt).min(p.max);
+            profiles[profile].values[selected] = p.value;
         }
         if is_key_down(KeyCode::Left) {
             let p = &mut params[selected];
             p.value = (p.value - p.speed * dt).max(p.min);
+            profiles[profile].values[selected] = p.value;
         }
         let mouse = Vec2::from(mouse_position());
         if is_mouse_button_pressed(MouseButton::Left)
@@ -361,9 +433,10 @@ async fn main() {
                 &params,
                 selected,
                 background,
-                PROFILES[profile].name,
+                profiles[profile].name,
                 dark,
                 &scene,
+                save_message.as_deref(),
             );
         }
         if scene.frame >= 5
