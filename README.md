@@ -717,7 +717,7 @@ The production library should remain windowless.
 
 Development still needs a convenient environment for testing.
 
-The local sandbox is expected to use something similar to:
+The local sandbox uses:
 
 ```text
 winit
@@ -726,6 +726,15 @@ glutin
   +
 LiquidGlass
 ```
+
+**Status:** implemented at `examples/sandbox.rs`, backed by the `glow` renderer in
+`src/backend/gl/`. Run it with `cargo run --example sandbox`. It renders the same
+`glass.frag` / `glass_mask.frag` / `blur.frag` shaders as the Macroquad reference,
+through the same multi-pass pipeline, with no Macroquad dependency in the binary.
+Visual parity with the reference has been confirmed by side-by-side capture (set
+`SPARK_GLASS_SANDBOX_CAPTURE=<path>` to dump a PNG after a few frames, for
+comparison against `SPARK_GLASS_CAPTURE` on the reference binary — both are
+debug/test-tooling readbacks, never used on the normal render path).
 
 This executable can test:
 
@@ -977,6 +986,13 @@ glow
 
 while reproducing the existing visual pipeline.
 
+**Status:** implemented — `src/backend/gl/` (`renderer.rs`, `shader.rs`, `target.rs`,
+`texture.rs`). Reuses the reference fragment shaders verbatim; only the vertex
+stage and host-facing plumbing differ, per the "shaders are the material, not
+the plumbing" rule. Not yet done: the C ABI (Phase 2) and GL state-preservation
+contract (still an open question below) — this phase only covers the renderer
+itself running host-side, in Rust, against a `glow::Context`.
+
 ---
 
 ## Phase 4 — Standalone Sandbox
@@ -988,6 +1004,9 @@ winit + glutin + LiquidGlass
 ```
 
 and establish visual parity with the PoC.
+
+**Status:** implemented — `examples/sandbox.rs`. Visual parity with the Macroquad
+reference confirmed by capture comparison at 1280×800 with the "Clear" profile.
 
 ---
 

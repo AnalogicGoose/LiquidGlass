@@ -10,3 +10,11 @@ repository = "https://github.com/AnalogicGoose/LiquidGlass"
 [dependencies]
 macroquad = "0.4.16"
 image = "0.24"
+glam = "0.27"
+glow = "0.14"
+
+[dev-dependencies]
+winit = "0.30"
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"

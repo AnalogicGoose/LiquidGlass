@@ -5,7 +5,7 @@
 //! renderer maps it to the native compositor/effect pipeline it supports.
 #![allow(dead_code)] // Public semantic vocabulary is consumed by future UI backends.
 
-use macroquad::prelude::*;
+use glam::{Vec2, vec2};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GlassStyle {

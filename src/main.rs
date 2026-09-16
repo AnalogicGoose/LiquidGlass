@@ -1,9 +1,6 @@
-mod glass;
-mod renderer;
-
-use crate::glass::*;
-use crate::renderer::MacroquadGlassRenderer;
 use macroquad::prelude::*;
+use spark_glass_poc::glass::*;
+use spark_glass_poc::renderer::MacroquadGlassRenderer;
 use std::time::Instant;
 
 const BACKGROUNDS: [&[u8]; 4] = [
