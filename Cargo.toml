@@ -5,7 +5,12 @@ edition = "2024"
 description = "SparkGlass — an Analogic Goose GPU visual-material proof of concept inspired by Apple's Liquid Glass"
 license = "MIT"
 authors = ["Analogic Goose"]
-repository = "https://github.com/AnalogicGoose/LiquidGlass"
+repository = "https://github.com/AnalogicGoose/SparkGlass"
+
+[lib]
+# rlib for the binary/examples, cdylib so an external C/C++ host can actually
+# link against it (see c_smoke/ for a real, non-Rust consumer of src/ffi/).
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 macroquad = "0.4.16"

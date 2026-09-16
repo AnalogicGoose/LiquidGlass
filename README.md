@@ -583,9 +583,18 @@ boundary, no unwind ever crosses it), all operating on the opaque
 `examples/ffi_smoke.rs` drives the renderer through these functions only — no
 `GlGlassRenderer`, no `GlassScene` — and its captured output is byte-identical
 to `examples/sandbox.rs`'s direct-API output, confirming the wrapper adds no
-behavioral divergence. Not yet done: a `cdylib` build target for an actual
-external C/C++ consumer, and container/interaction fields on `LGGlassElement`
-(both OPEN elsewhere in this doc).
+behavioral divergence.
+
+The crate also builds as a `cdylib` now, and `c_smoke/main.c` + `include/spark_glass.h`
+prove the exit condition literally: a plain C program, built with `gcc`, linking
+directly against `libspark_glass_poc.so` — no Rust anywhere in that build —
+creates a headless EGL context, calls `lg_create`/`lg_render_frame`/`lg_present`/
+`lg_destroy`, and deliberately trips the `struct_size` version guard to confirm
+it's enforced. `sizeof(LGFrame)` matched between `gcc` and `rustc` with no
+manual padding in the header, confirming the `#[repr(C)]` layout really is
+what the header claims. Build/run instructions are in a comment at the top of
+`c_smoke/main.c`. Not yet done: container/interaction fields on
+`LGGlassElement` (OPEN elsewhere in this doc).
 
 ---
 
