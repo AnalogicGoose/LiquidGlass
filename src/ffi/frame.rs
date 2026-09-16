@@ -161,10 +161,9 @@ pub unsafe extern "C" fn lg_render_frame(ctx: *mut LiquidGlassContext, frame: *c
         scene.quality = frame.quality.into();
         scene.reduced_transparency = frame.reduced_transparency != 0;
         scene.reduced_motion = frame.reduced_motion != 0;
-        // `GlassScene::new` also seeds a hardcoded demo `GlassGroup`, which
-        // the renderer never reads (grouping/container behavior is FUTURE
-        // work per §13); harmless here, but worth a look if `GlassScene` is
-        // ever changed to key rendering off `groups`.
+        // `LGFrame` has no container/group fields yet — grouping/container
+        // behavior is FUTURE work per architecture doc §13, and the
+        // renderer doesn't read `GlassScene::groups` at all today.
         ctx.renderer.resize_if_needed(&ctx.gl, frame.width, frame.height);
         ctx.renderer.render(&ctx.gl, &scene);
     }));

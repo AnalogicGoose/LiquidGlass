@@ -151,11 +151,12 @@ impl GlassScene {
     pub fn new(surfaces: Vec<GlassSurface>) -> Self {
         Self {
             surfaces,
-            groups: vec![GlassGroup {
-                name: "demo surfaces",
-                surface_ids: vec![1, 2],
-                style: GlassStyle::Regular,
-            }],
+            // Container/group semantics are FUTURE work (architecture doc
+            // §13) — nothing reads `groups` yet. Left empty rather than
+            // seeded with placeholder data, since fabricated group
+            // membership referencing hardcoded surface ids would be wrong
+            // for any scene that doesn't happen to match them.
+            groups: Vec::new(),
             quality: GlassQuality::High,
             reduced_transparency: false,
             reduced_motion: false,
