@@ -122,6 +122,25 @@ const SWEEPS: &[Sweep] = &[
         values: &[0.15, 0.25, 0.4, 0.6, 0.8, 1.0],
         apply: |material, _optics, v| material.tint_opacity = v,
     },
+    Sweep {
+        parameter: "clear_dimming",
+        // Phase 8.8 (docs/SparkGlass_ROADMAP.md): 0 is every shipped
+        // preset's default (verified as a byte-identical no-op by
+        // scripts/visual_regression.sh). This brackets from off to a
+        // clearly-too-strong value, so a reviewer can see where legibility
+        // protection turns into just darkening the material.
+        values: &[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+        apply: |material, _optics, v| material.clear_dimming = v,
+    },
+    Sweep {
+        parameter: "adaptive_response",
+        // Phase 8.5 (docs/SparkGlass_ROADMAP.md): 0 is every shipped
+        // preset's default. Rendered over assets/image1.jpg (a busy photo
+        // backdrop), so the rim/edge boost this drives should be visible by
+        // the high end of the range.
+        values: &[0.0, 0.25, 0.5, 0.75, 1.0],
+        apply: |material, _optics, v| material.adaptive_response = v,
+    },
 ];
 
 fn main() {

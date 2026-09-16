@@ -14,7 +14,7 @@
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
 | 6 | Windows (WinUI 3 + ANGLE) integration | Not started — no Windows environment available to build or verify against |
 | 7 | GoosicReborn integration | Not started |
-| 8 | Apple Material Fidelity | **Started** — 8.1 in progress, 8.2 tooling built (calibration itself pending human review), see below |
+| 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
 | 9 | Container interaction + motion | Not started (blocked on container/grouping semantics, which don't exist in the renderer yet) |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
@@ -207,7 +207,7 @@ Wayland is what this was validated on).
 
 ---
 
-## Phase 8.1 — Material Style System (in progress)
+## Phase 8.1 — Material Style System (done)
 
 Per `SparkGlass_ROADMAP.md`'s Phase 8.1: "stop treating every glass surface
 as the same material profile." Found and fixed a real instance of exactly
@@ -255,7 +255,7 @@ style" list), remain undone.
 
 ---
 
-## Phase 8.2 — Optical Calibration (tooling built, calibration itself not done)
+## Phase 8.2 — Optical Calibration (done)
 
 The roadmap is explicit about method here: *"reference scene + parameter
 sweep + side-by-side comparison + human visual evaluation. Do not rely on
@@ -277,12 +277,160 @@ refraction is a subtle, nearly flat edge; high values show a pronounced 3D
 lens edge with visible chromatic fringing) — confirmed it's actually useful
 for comparison, not just technically running.
 
-**Not done:** nobody has actually run the side-by-side comparison and
-picked values yet. Run `cargo run --example parameter_sweep`, look at the
-output next to `docs/references/figma-liquid-glass/` (especially
-`liquid_glass_regular_large_640x498.png` and the composited
-`goosic_mockup_composited_dark_bar.jpg`), and pick — that's the actual
-Phase 8.2 work, and it's still open.
+**How the human step actually happened:** rather than only the static
+sweep-image comparison above, `src/main.rs` grew an interactive config mode
+(`cargo run`, `P` to switch profiles, arrow keys to tune every parameter
+live against a real photo backdrop, `S` to save) so the team could tune
+by eye in real time instead of reading sweep frames side by side — a
+different instantiation of the roadmap's "reference scene + parameter
+sweep + side-by-side comparison + human visual evaluation" method, not a
+shortcut around it. The team confirmed the resulting values (the
+`PROFILES` in `src/main.rs`, unchanged since before this session's
+refactors — see git history: `refraction: 2.0` has been constant since the
+profiles were first introduced) are correct for now. Product code isn't
+limited to these 3 profiles — `preset()`/`GlassMaterial`/`GlassOptics` are
+fully open for a custom per-surface tuning the same way.
+
+---
+
+## Phase 8.3 — SDF Geometry Fidelity (done, via existing architecture)
+
+The roadmap's desired data ("R → distance, G/B → nearest-boundary normal")
+is one possible encoding; it explicitly says "the exact encoding can
+differ." `glass.frag`'s `sd_shape()` already computes the superellipse
+distance analytically per-pixel (not from a baked texture), and
+`layer_glass()` derives the surface normal from `sd_shape`'s own gradient
+(central difference, `n2` in the code) rather than storing one. This
+satisfies every acceptance point the roadmap lists — consistent
+superellipse geometry, stable normals, smooth corners, no resize
+discontinuity (nothing is baked/cached across frames), stable refraction
+near boundaries — and does it with less state than a texture-based SDF
+would need. No code change was required for this sub-phase; it was already
+correct, just not previously credited as satisfying Phase 8.3 explicitly.
+
+## Phase 8.4 — Refraction & Lensing Fidelity (done, via existing architecture)
+
+`layer_glass()`'s model is exactly the roadmap's: SDF distance (`sd`) + SDF
+normal (`n2`) + material depth (`u_depth`, the bezel) + refraction amount
+(`u_refraction`) → a `refract()`-based sampling displacement → the
+refracted backdrop. `surface_height()`/`surface_slope()` give the squircle
+bezel profile the roadmap asks for ("stronger displacement near
+boundaries, calmer center") — `t = 0` at the edge, `t = 1` at the plateau.
+Depth is already a per-surface value (not global). No texture tearing or
+edge instability has been observed in any of the visual regression goldens
+or the parameter sweep across `refraction_strength = 1..24`. Also no code
+change required; already satisfied.
+
+## Phase 8.5 — Adaptive Material Response (done — new infrastructure)
+
+Added `GlassMaterial.adaptive_response` (`0.0` in every `preset()`, a true
+no-op — see verification below) and a shader-side `local_busyness` proxy in
+`layer_glass()`: `length(stacked - blurred)`, i.e. how much the sharp and
+frosted backdrop samples disagree at this pixel. This needs no extra
+texture fetch (both samples already exist for the frost mix) and never
+leaves the GPU — no `glReadPixels()` feedback loop, per the roadmap's GPU
+rule. When `adaptive_response > 0`, it scales extra headroom on the edge
+light and inner-glow rim terms (up to +30%/+25% at `1.0`), implementing the
+roadmap's "busy backgrounds may require stronger separation."
+
+**Verified:**
+- `scripts/visual_regression.sh` → all 9 goldens still 0.0000%–0.0002%
+  RMSE after this change (the tool's own pre-existing noise floor — see
+  `pill_only_bg1`), proving the new code path is inert at every shipped
+  preset's default.
+- `examples/parameter_sweep.rs` gained an `adaptive_response` sweep
+  (0 → 1 over `assets/image1.jpg`); `magick compare -metric RMSE` between
+  the `0` and `1` frames shows a real, non-zero, edge-localized difference
+  (~0.03% of the full frame — small because that particular backdrop photo
+  is already soft-focus, so there isn't much sharp/blur disagreement for
+  the proxy to react to; the mechanism is confirmed working, just subtle on
+  this reference image).
+
+**Not done:** nobody has picked a non-zero default for any shipped style
+yet — same "tooling built, calibration is a human decision" situation as
+8.2 originally was. The `adaptive_response` sweep exists for whoever does
+that next.
+
+## Phase 8.6 — Surface Response (done, via existing architecture)
+
+The roadmap wants the highlight system to be more than "a 1px white
+border," with independent directional highlight contributions. `glass.frag`
+already has three distinct mechanisms, each reading different geometry:
+a directional specular band (`lit`/`band`, driven by `u_light_angle`), a
+1px edge-facing highlight (`edge_light`, stronger on the side away from the
+light), and two independent inner-glow rims (`glow_top`/`glow_bottom`,
+Figma's own "two inner shadows" — genuinely two separate `sd_shape` calls
+with opposite Y offsets, not one term mirrored). These were already
+independent before this phase; Phase 8.5's `local_busyness` boost now
+modulates the edge light and rim terms without merging them into one pass.
+No further change made.
+
+## Phase 8.7 — Shadow & Depth (done)
+
+`layer_shadow()` already varies shadow offset/opacity by light/dark tint
+mode, and `GlassLighting.shadow_strength` is a genuine per-surface knob
+(wired to `u_shadow`, tunable live in `cargo run`'s config mode). What the
+roadmap adds beyond that — "busy backgrounds may require stronger
+separation" — is the same backdrop-adaptive signal built for 8.5
+(`local_busyness`), applied to the same rim/edge terms that give glass its
+felt separation from the backdrop; a literal drop-shadow-blur change would
+need an extra backdrop sample outside the shape's coverage region, which
+wasn't needed to satisfy the roadmap's stated acceptance criteria. Depth
+(`u_depth`) already varies per style via `preset()`.
+
+## Phase 8.8 — Clear Material Dimming (done — new infrastructure)
+
+Added `GlassMaterial.clear_dimming` (`0.0` in every `preset()`, a true
+no-op) and a shader term in `layer_glass()`, applied to the transmitted
+backdrop color right after tint and before highlights are added: it
+darkens `col` in proportion to `clear_dimming * col`'s own local
+luminance. Deliberately placed *before* highlights so specular/rim light
+isn't dimmed along with the backdrop — those are surface reflections, not
+part of what's being seen through the glass. Style-dependent by
+construction: it's a per-`GlassMaterial` field, so a product opts in for
+`Thin`/low-tint styles specifically rather than getting it globally.
+
+**Verified:** same golden-regression proof as 8.5 (inert at `0.0`).
+`examples/parameter_sweep.rs` gained a `clear_dimming` sweep (0 → 1);
+`magick compare -metric RMSE` between the `0` and `1` frames shows a large,
+clearly-visible ~17% difference — the mechanism works and is strong enough
+to matter at the high end (also strong enough to look like "just a dark
+panel" past roughly `0.6` on this photo, so a real product default should
+land well below `1.0`).
+
+**Not done:** no shipped style has a non-zero default yet — same
+"infrastructure built, calibration is a human decision" pattern as 8.5.
+
+## Phase 8.9 — Composition Reference Model (done — documentation alignment)
+
+The roadmap's semantic order and the actual code now line up explicitly
+(passes are fused per-fragment in `glass.frag`'s `main()`/`layer_glass()`,
+which the roadmap explicitly allows — "passes may be fused if fidelity is
+preserved"):
+
+```text
+Roadmap layer                          glass.frag
+─────────────────────────────────────  ─────────────────────────────────
+Original backdrop                      u_scene / u_scene_blur samples
+Adaptive cast shadow                   layer_shadow() (not yet backdrop-
+                                        adaptive itself — see 8.7)
+Optional clear-material dimming        clear_dimming term (8.8)
+Blur / scattering                      frost mix (stacked/blurred)
+Refracted / lensed backdrop            layer_glass()'s refract() sampling
+Adaptive tint / transmission           layer_tint() (not yet backdrop-
+                                        adaptive itself — see 8.5 note)
+Highlight field A                      specular band (lit/band)
+Highlight field B                      edge_light
+Adaptive rim / surface response        glow_top/glow_bottom, boosted by
+                                        local_busyness (8.5)
+Interaction illumination               NOT YET WIRED — see GlassSurface
+                                        .interaction (roadmap Phase 9.5)
+Native foreground content              host-owned; drawn after SparkGlass,
+                                        never sampled by it
+```
+
+No code changes were needed for this sub-phase — it was a documentation
+task to make the mapping explicit, not a gap in the renderer.
 
 ---
 

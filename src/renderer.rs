@@ -98,6 +98,11 @@ impl MacroquadGlassRenderer {
                     UniformDesc::new("u_tint_mode", UniformType::Float1),
                     UniformDesc::new("u_tint", UniformType::Float1),
                     UniformDesc::new("u_shadow", UniformType::Float1),
+                    UniformDesc::new("u_saturation", UniformType::Float1),
+                    UniformDesc::new("u_brightness", UniformType::Float1),
+                    UniformDesc::new("u_contrast", UniformType::Float1),
+                    UniformDesc::new("u_clear_dimming", UniformType::Float1),
+                    UniformDesc::new("u_adaptive_response", UniformType::Float1),
                 ],
                 textures: vec![
                     "u_scene".to_owned(),
@@ -256,6 +261,16 @@ impl MacroquadGlassRenderer {
             .set_uniform("u_tint", surface.material.tint_opacity);
         self.glass
             .set_uniform("u_shadow", surface.lighting.shadow_strength);
+        self.glass
+            .set_uniform("u_saturation", surface.material.saturation);
+        self.glass
+            .set_uniform("u_brightness", surface.material.brightness);
+        self.glass
+            .set_uniform("u_contrast", surface.material.contrast);
+        self.glass
+            .set_uniform("u_clear_dimming", surface.material.clear_dimming);
+        self.glass
+            .set_uniform("u_adaptive_response", surface.material.adaptive_response);
         gl_use_material(&self.glass);
         let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
         let quad = geometry.size() + SHADOW_MARGIN * 2.0;

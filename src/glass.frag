@@ -37,6 +37,15 @@ uniform float u_tint_mode; // 0 = tinte blanco (Liquid Glass Light), 1 = negro (
 uniform float u_tint;      // multiplica la opacidad de los rellenos del tinte (1 = Figma)
 uniform float u_shadow;    // multiplica la opacidad de la sombra (1 = Figma)
 
+// Phase 8.5/8.8 (docs/SparkGlass_ROADMAP.md): color grade + adaptive knobs.
+// All four are no-ops at their `preset()` defaults (1, 0, 1, 0, 0), so a
+// surface that never sets them renders exactly as before this stage existed.
+uniform float u_saturation;       // 1 = no change
+uniform float u_brightness;       // 0 = no change
+uniform float u_contrast;         // 1 = no change
+uniform float u_clear_dimming;    // 0 = no local dimming (Clear Material Dimming, 8.8)
+uniform float u_adaptive_response; // 0 = no backdrop-adaptive rim boost (8.5)
+
 const float IOR = 1.5;
 
 // Valores fijos del diseño de Figma. Los que cambian entre la variante clara
@@ -228,11 +237,27 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     // pass just like stacked macOS glass.
     vec3 col = mix(stacked, blurred, frost);
 
+    // Phase 8.5 — Adaptive Material Response: how much the sharp and frosted
+    // backdrop samples disagree is a free, GPU-resident proxy for "how busy
+    // is the backdrop here" — no extra texture fetch, no CPU readback.
+    // `u_adaptive_response` (0 by default) scales how much this feeds into
+    // the rim/edge highlights below, per 8.7's "busy backgrounds may
+    // require stronger separation".
+    float local_busyness = clamp(length(stacked - blurred) * 2.0, 0.0, 1.0) * u_adaptive_response;
+
     // El glass refracta lo que tiene debajo, que ya incluye el tinte de la capa 1.
     // El tinte es uniforme dentro de la forma, así que aplicarlo tras muestrear
     // da el mismo resultado.
     vec3 tinted = layer_tint(col);
     col = mix(tinted, col, 0.78 * stack_response);
+
+    // Phase 8.8 — Clear Material Dimming: darken the transmitted backdrop in
+    // proportion to its own local luminance, before highlights are added, so
+    // native foreground content the host draws on top of a high-
+    // transmission surface stays legible. `u_clear_dimming` is 0 for every
+    // shipped preset; a product opts in per style.
+    float local_luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col *= 1.0 - u_clear_dimming * local_luma * 0.5;
 
     // Luz especular: franja suave en el borde hacia el que apunta la luz. Con 0°
     // la luz baja desde arriba y el brillo cae en el borde inferior. Calibrado
@@ -245,10 +270,12 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
 
     // Filo de 1 px en el borde interior, más fuerte en el lado opuesto a la luz.
     // En el tinte blanco queda saturado; se nota en el negro (medido en Figma).
+    // The busyness boost (8.5/8.7) is additive headroom on top of the base
+    // response, not a replacement for it, so it stays 0 at `u_adaptive_response = 0`.
     float edge = 1.0 - smoothstep(0.5, 1.5, dist);
     float facing = dot(n2, light);
     float edge_light = 0.45 * pow(max(-facing, 0.0), 3.0) + 0.17 * pow(max(facing, 0.0), 3.0);
-    col += u_light_intensity * edge * edge_light;
+    col += u_light_intensity * edge * edge_light * (1.0 + 0.3 * local_busyness);
 
     // Inner shadows #282828 / #1A1A1A (blur 10, spread -40, offset Y ±40) en
     // Linear Dodge: una franja suave de luz pegada al borde superior y otra al
@@ -258,7 +285,15 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     vec2 glow_offset = vec2(0.0, EDGE_GLOW_OFFSET);
     float glow_top = 1.0 - blurred_coverage(sd_shape(p - glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     float glow_bottom = 1.0 - blurred_coverage(sd_shape(p + glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
-    col += mix(LIGHT_EDGE_GLOW_COLOR, DARK_EDGE_GLOW_COLOR, u_tint_mode) * (glow_top + glow_bottom);
+    col += mix(LIGHT_EDGE_GLOW_COLOR, DARK_EDGE_GLOW_COLOR, u_tint_mode) * (glow_top + glow_bottom) * (1.0 + 0.25 * local_busyness);
+
+    // Phase 8's remaining infrastructure piece: a final neutral-by-default
+    // color grade (saturation/brightness/contrast), applied after highlights
+    // so a product can grade the whole composited material in one place
+    // instead of fighting individual layer colors.
+    float gray = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(gray), col, u_saturation);
+    col = (col - 0.5) * u_contrast + 0.5 + u_brightness;
 
     return clamp(col, 0.0, 1.0);
 }

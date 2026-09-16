@@ -39,16 +39,27 @@ pub struct GlassMaterial {
     pub frost_radius: f32,
     pub tint_opacity: f32,
     pub dark_tint: bool,
-    /// Not yet wired to any shader uniform — `glass.frag` has no color-grade
-    /// stage. Setting this has no visual effect today; it's a placeholder
-    /// for that stage if one gets added (Phase 8's "adaptive tint/luminance"
-    /// work is the likely place). Verified by grep: every write-site sets a
-    /// constant, no read-site exists anywhere in either renderer.
+    /// Final color-grade stage in `glass.frag`, applied after tint and
+    /// before highlights. `1.0` (the `preset()` default) is a no-op — every
+    /// shipped style is neutral here unless a product opts in.
     pub saturation: f32,
-    /// Not yet wired to any shader uniform — same situation as `saturation`.
+    /// See `saturation`. `0.0` is a no-op.
     pub brightness: f32,
-    /// Not yet wired to any shader uniform — same situation as `saturation`.
+    /// See `saturation`. `1.0` is a no-op.
     pub contrast: f32,
+    /// Roadmap Phase 8.8 "Clear Material Dimming": darkens the refracted
+    /// backdrop in proportion to its own local luminance, before highlights
+    /// are added — protects legibility of whatever native foreground
+    /// content the host draws on top of a high-transmission ("Clear")
+    /// surface. `0.0` (the `preset()` default) is a no-op; it's meant to be
+    /// opted into per-style, not applied globally.
+    pub clear_dimming: f32,
+    /// Roadmap Phase 8.5 "Adaptive Material Response": scales how much
+    /// extra rim/edge separation `glass.frag` adds in front of a locally
+    /// "busy" backdrop (where the sharp and frosted samples disagree the
+    /// most) — see 8.7's "busy backgrounds may require stronger
+    /// separation". `0.0` (the `preset()` default) is a no-op.
+    pub adaptive_response: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -222,6 +233,8 @@ pub fn preset(style: GlassStyle, dark_tint: bool) -> (GlassMaterial, GlassOptics
             saturation: 1.0,
             brightness: 0.0,
             contrast: 1.0,
+            clear_dimming: 0.0,
+            adaptive_response: 0.0,
         },
         GlassOptics {
             refraction_strength: 2.0,
@@ -261,5 +274,23 @@ mod tests {
         assert_eq!(material.tint_opacity, 0.15);
         assert_eq!(optics.refraction_strength, 2.0);
         assert_eq!(lighting.intensity, 0.25);
+    }
+
+    #[test]
+    fn every_style_ships_the_phase_8_color_and_adaptive_knobs_as_no_ops() {
+        for style in [
+            GlassStyle::Thin,
+            GlassStyle::Regular,
+            GlassStyle::Prominent,
+            GlassStyle::Control,
+            GlassStyle::Navigation,
+        ] {
+            let (material, ..) = preset(style, false);
+            assert_eq!(material.saturation, 1.0, "{style:?}");
+            assert_eq!(material.brightness, 0.0, "{style:?}");
+            assert_eq!(material.contrast, 1.0, "{style:?}");
+            assert_eq!(material.clear_dimming, 0.0, "{style:?}");
+            assert_eq!(material.adaptive_response, 0.0, "{style:?}");
+        }
     }
 }

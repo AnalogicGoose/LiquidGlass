@@ -64,6 +64,11 @@ struct GlassProgram {
     tint_mode: Loc,
     tint: Loc,
     shadow: Loc,
+    saturation: Loc,
+    brightness: Loc,
+    contrast: Loc,
+    clear_dimming: Loc,
+    adaptive_response: Loc,
     u_scene: Loc,
     u_scene_blur: Loc,
     u_stack_mask: Loc,
@@ -92,6 +97,11 @@ impl GlassProgram {
                 tint_mode: loc(gl, program, "u_tint_mode"),
                 tint: loc(gl, program, "u_tint"),
                 shadow: loc(gl, program, "u_shadow"),
+                saturation: loc(gl, program, "u_saturation"),
+                brightness: loc(gl, program, "u_brightness"),
+                contrast: loc(gl, program, "u_contrast"),
+                clear_dimming: loc(gl, program, "u_clear_dimming"),
+                adaptive_response: loc(gl, program, "u_adaptive_response"),
                 u_scene: loc(gl, program, "u_scene"),
                 u_scene_blur: loc(gl, program, "u_scene_blur"),
                 u_stack_mask: loc(gl, program, "u_stack_mask"),
@@ -426,6 +436,11 @@ impl GlGlassRenderer {
             );
             gl.uniform_1_f32(self.glass.tint.as_ref(), surface.material.tint_opacity);
             gl.uniform_1_f32(self.glass.shadow.as_ref(), surface.lighting.shadow_strength);
+            gl.uniform_1_f32(self.glass.saturation.as_ref(), surface.material.saturation);
+            gl.uniform_1_f32(self.glass.brightness.as_ref(), surface.material.brightness);
+            gl.uniform_1_f32(self.glass.contrast.as_ref(), surface.material.contrast);
+            gl.uniform_1_f32(self.glass.clear_dimming.as_ref(), surface.material.clear_dimming);
+            gl.uniform_1_f32(self.glass.adaptive_response.as_ref(), surface.material.adaptive_response);
             gl.uniform_2_f32(self.glass.ndc_size.as_ref(), frame.x, frame.y);
 
             let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;

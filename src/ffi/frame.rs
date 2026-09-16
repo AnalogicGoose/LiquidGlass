@@ -84,9 +84,15 @@ fn element_to_surface(element: &SGGlassElement) -> GlassSurface {
             frost_radius: element.frost_radius,
             tint_opacity: element.tint_opacity,
             dark_tint: element.dark_tint != 0,
+            // Color-grade and Phase 8.5/8.8 adaptive knobs are not yet
+            // exposed on `SGGlassElement` (an ABI-breaking addition, per
+            // §32's struct-size versioning guard) — always neutral through
+            // the C ABI today, same as saturation/brightness/contrast above.
             saturation: 1.0,
             brightness: 0.0,
             contrast: 1.0,
+            clear_dimming: 0.0,
+            adaptive_response: 0.0,
         },
         optics: GlassOptics {
             refraction_strength: element.refraction_strength,
