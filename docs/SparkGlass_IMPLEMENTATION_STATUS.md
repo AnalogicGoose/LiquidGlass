@@ -10,7 +10,7 @@
 | 1 | Semantic scene model | Mostly done informally in `src/glass.rs`; not yet frozen on purpose |
 | 2 | C ABI v0 | Done — `src/ffi/`, proven from a real C program, not just Rust |
 | 3 | `glow` GL renderer | Done — `src/backend/gl/` |
-| 4 | Standalone windowless-core sandbox | Done — `examples/sandbox.rs` (visual regression framework itself not built yet) |
+| 4 | Standalone windowless-core sandbox + visual regression framework | Done — `examples/sandbox.rs`, `examples/visual_regression.rs` + `scripts/visual_regression.sh` |
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
 | 6 | Windows (WinUI 3 + ANGLE) integration | Not started — no Windows environment available to build or verify against |
 | 7 | GoosicReborn integration | Not started |
@@ -107,6 +107,32 @@ capture at 1280×800 under the "Clear" profile — set
 compare against `SPARK_GLASS_CAPTURE=<path>` on the reference binary
 (`cargo run`). Both are debug/test-tooling readbacks (architecture doc §43),
 never used on the normal render path.
+
+The roadmap's Phase 4 also calls for a **visual regression framework**
+(reference/candidate/diff images, tested against a fixed scene set) —
+**done**: `examples/visual_regression.rs` (a fully headless EGL-pbuffer
+capture tool, no window at all — the same proven pattern as `c_smoke`, just
+in Rust) renders 8 fixed named scenes (varying backdrop, geometry, light/
+dark tint, and a deliberately-overlapping pair to exercise the glass-on-
+glass stack response) to `tests/visual_regression/candidates/`.
+`scripts/visual_regression.sh` diffs each against a committed golden image
+in `tests/visual_regression/golden/` using `magick compare -metric RMSE`
+(deliberately not `-metric AE` — on this environment's ImageMagick build,
+7.1.2 Q16-HDRI, `AE`'s pixel count is wildly inflated in HDRI mode, e.g.
+reporting >500M "differing pixels" on a 1.02M-pixel image; `RMSE`'s
+normalized fraction is sane and was cross-checked against a known real
+change). Verified both directions: confirmed 0% RMSE against the current
+renderer, and confirmed a deliberately-reintroduced regression (temporarily
+reverting the Phase 8.1 fix) was correctly caught at 2.9–6.5% RMSE on
+exactly the affected scenes and 0% on the unaffected ones, before reverting
+back. Run it with `scripts/visual_regression.sh` (`--update` to promote new
+candidates to golden after reviewing a diff by eye).
+
+**Not done:** the roadmap's full test-scene list (dark backdrop, gradients,
+high-frequency text, animated geometry — this only covers the 4 existing
+photo backdrops plus light/dark tint and overlap) and the "material
+parameters + GPU/backend metadata" side of what the roadmap asks to store
+alongside each capture.
 
 ---
 
