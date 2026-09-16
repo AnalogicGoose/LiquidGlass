@@ -6,5 +6,6 @@
 //! that reproduces the same shaders without depending on Macroquad (Phase 3).
 
 pub mod backend;
+pub mod ffi;
 pub mod glass;
 pub mod renderer;

@@ -561,6 +561,19 @@ The C boundary must not expose:
 
 FFI-facing structures should use deliberately defined C-compatible layouts.
 
+**Status:** a v0 of this boundary is implemented at `src/ffi/` (`context.rs`,
+`frame.rs`, `error.rs`): `lg_create` / `lg_destroy` / `lg_resize` /
+`lg_set_backdrop_gl_texture` / `lg_render_frame` / `lg_present` /
+`lg_last_error`, all `extern "C"`, all panic-safe (`catch_unwind` at every
+boundary, no unwind ever crosses it), all operating on the opaque
+`LiquidGlassContext` pointer plus POD `LGFrame`/`LGGlassElement` structs.
+`examples/ffi_smoke.rs` drives the renderer through these functions only — no
+`GlGlassRenderer`, no `GlassScene` — and its captured output is byte-identical
+to `examples/sandbox.rs`'s direct-API output, confirming the wrapper adds no
+behavioral divergence. Not yet done: a `cdylib` build target for an actual
+external C/C++ consumer, and container/interaction fields on `LGGlassElement`
+(both OPEN elsewhere in this doc).
+
 ---
 
 # Frame Submission
@@ -973,6 +986,10 @@ Define:
 - frame structures
 - resource APIs
 - thread requirements
+
+**Status:** v0 implemented — see the "Native C ABI" section above for what
+exists and what's still missing (`cdylib` output, container/interaction
+fields).
 
 ---
 
