@@ -7,7 +7,7 @@
 | Phase | What | Status |
 |---|---|---|
 | 0 | Preserve the Macroquad reference | Done — `cargo run` is still the visual baseline |
-| 1 | Semantic scene model | Mostly done informally in `src/glass.rs`; not yet frozen on purpose |
+| 1 | Semantic scene model | Ongoing field-by-field audit — 2 rounds done, see below; not yet frozen on purpose |
 | 2 | C ABI v0 | Done — `src/ffi/`, proven from a real C program, not just Rust |
 | 3 | `glow` GL renderer | Done — `src/backend/gl/` |
 | 4 | Standalone windowless-core sandbox + visual regression framework | Done — `examples/sandbox.rs`, `examples/visual_regression.rs` + `scripts/visual_regression.sh` |
@@ -20,6 +20,35 @@
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
 Everything below is either implemented-and-verified or an explicit gap — nothing here is aspirational. If it doesn't have a "Status" note, it hasn't been built.
+
+---
+
+## Phase 1 — Semantic scene model (ongoing audit)
+
+Not "frozen on purpose" yet — informally in decent shape, but never
+deliberately reviewed field-by-field. The method used here: grep every
+field's write-sites against its read-sites before trusting what a doc
+comment claims it does. Two rounds so far:
+
+- `GlassScene::new` was fabricating a hardcoded demo `GlassGroup` nothing
+  ever read — fixed (now defaults to empty; see the "container/group
+  semantics" note in `src/glass.rs`).
+- `GlassMaterial::saturation`/`brightness`/`contrast`, `GlassOptics::
+  surface_curvature`, and `GlassSurface::interaction` are part of the
+  public struct but have **zero** corresponding shader uniform — confirmed
+  by grep: every write-site sets a constant, no read-site exists in either
+  renderer. Setting these from host code silently does nothing today. Not
+  removed (they're reasonable future material properties, and
+  `interaction` has a clear home in roadmap Phase 9.5), but now documented
+  directly on the fields so nobody — human or AI — assumes they work.
+  `GlassScene::reduced_transparency` was checked too and *is* genuinely
+  wired (both renderers zero frost when it's set); `reduced_motion` isn't
+  yet, for the honest reason that there's no motion/animation system at
+  all for it to affect yet.
+
+**Not done:** the rest of the roadmap's Phase 1 checklist (Backdrop,
+TextureHandle beyond the FFI layer, RenderTarget) hasn't had the same
+grep-audit treatment yet.
 
 ---
 

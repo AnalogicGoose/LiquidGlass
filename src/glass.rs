@@ -39,8 +39,15 @@ pub struct GlassMaterial {
     pub frost_radius: f32,
     pub tint_opacity: f32,
     pub dark_tint: bool,
+    /// Not yet wired to any shader uniform — `glass.frag` has no color-grade
+    /// stage. Setting this has no visual effect today; it's a placeholder
+    /// for that stage if one gets added (Phase 8's "adaptive tint/luminance"
+    /// work is the likely place). Verified by grep: every write-site sets a
+    /// constant, no read-site exists anywhere in either renderer.
     pub saturation: f32,
+    /// Not yet wired to any shader uniform — same situation as `saturation`.
     pub brightness: f32,
+    /// Not yet wired to any shader uniform — same situation as `saturation`.
     pub contrast: f32,
 }
 
@@ -49,6 +56,11 @@ pub struct GlassOptics {
     pub refraction_strength: f32,
     pub depth: f32,
     pub dispersion: f32,
+    /// Not yet wired to any shader uniform — `glass.frag`'s SDF-based edge
+    /// curvature is currently derived entirely from `depth`/`smoothing`,
+    /// not a separate curvature input. Setting this has no visual effect
+    /// today. Verified by grep: every write-site sets a constant (0.6), no
+    /// read-site exists anywhere in either renderer.
     pub surface_curvature: f32,
 }
 
@@ -124,6 +136,10 @@ pub struct GlassSurface {
     pub material: GlassMaterial,
     pub optics: GlassOptics,
     pub lighting: GlassLighting,
+    /// Tracked (`main.rs` sets it while dragging a panel) but not yet wired
+    /// to any shader uniform — no renderer reads it. This one has a clearer
+    /// future than `GlassMaterial`'s dead fields: it's what roadmap Phase
+    /// 9.5 ("Interaction Illumination") would consume.
     pub interaction: GlassInteraction,
     pub style: GlassStyle,
 }
@@ -142,7 +158,13 @@ pub struct GlassScene {
     pub surfaces: Vec<GlassSurface>,
     pub groups: Vec<GlassGroup>,
     pub quality: GlassQuality,
+    /// Genuinely wired: both renderers zero a surface's frost when this is
+    /// set (see `surface_frost()` in `src/renderer.rs` and
+    /// `src/backend/gl/renderer.rs`).
     pub reduced_transparency: bool,
+    /// Accepted (including from the FFI frame struct) but not yet
+    /// consumed by any renderer — there's no animation/motion system yet
+    /// for it to reduce (roadmap Phase 9.4 "Morphing").
     pub reduced_motion: bool,
     pub frame: u64,
 }
