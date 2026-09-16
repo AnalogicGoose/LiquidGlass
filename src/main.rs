@@ -100,22 +100,90 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
 }
 
 /// Number of static hint lines `draw_hud` always draws below the parameter
-/// list (Profile/Background/Tint/Quality/drag hint/arrows hint/keys hint) —
-/// the one thing that must stay in sync between `debug_hud_surface` (which
-/// sizes the panel) and `draw_hud` (which fills it). A save confirmation
-/// replaces the last hint line in place rather than adding an 8th, so this
-/// count never needs to change for that.
+/// list (Profile/Background/Tint/Quality/drag hint/arrows hint/keys hint).
 const HUD_HINT_LINES: usize = 7;
+const HUD_PARAM_FONT: u16 = 20;
+const HUD_HINT_FONT: u16 = 18;
+const HUD_LINE_H: f32 = 20.0;
+const HUD_TEXT_X: f32 = 8.0;
+/// Distance from the panel's top edge to the first line's text baseline.
+const HUD_FIRST_BASELINE: f32 = 22.0;
+/// Distance from the last line's text baseline down to the panel's bottom
+/// edge — generous enough to keep descenders inside the panel even though
+/// macroquad's font metrics don't line up exactly with `HUD_LINE_H`.
+const HUD_BOTTOM_PAD: f32 = 36.0;
 
-fn hud_line_count(param_count: usize) -> f32 {
-    (param_count + HUD_HINT_LINES) as f32
+/// The HUD panel's text content — the single source of truth for both
+/// sizing the glass panel behind it (`hud_size`, used by `debug_hud_surface`)
+/// and drawing the text on top of it (`draw_hud`), so the two can never
+/// disagree about how many lines there are, how wide they are, or what they
+/// say. A save/reset confirmation replaces the last hint line in place
+/// rather than appending an 8th, so the line count here never changes for
+/// that.
+fn hud_texts(
+    params: &[Param],
+    selected: usize,
+    profile: &str,
+    background: usize,
+    dark: bool,
+    quality: GlassQuality,
+    save_message: Option<&str>,
+) -> (Vec<String>, [String; HUD_HINT_LINES]) {
+    let param_lines = params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            format!(
+                "{} {:<12} {:>7.2}",
+                if i == selected { ">" } else { " " },
+                p.label,
+                p.value
+            )
+        })
+        .collect();
+    let hint_lines = [
+        format!("Profile {profile}  [P]  R: reset it"),
+        format!("Background {}/4  [1-4]", background + 1),
+        format!("Tint {}  [T]", if dark { "black" } else { "white" }),
+        format!("Quality {quality:?}  [Q]"),
+        "Drag panels with the mouse".to_owned(),
+        "Arrows: select / adjust  H: hide".to_owned(),
+        save_message
+            .map(str::to_owned)
+            .unwrap_or_else(|| "D: scene debug   S: save all 3 profiles".to_owned()),
+    ];
+    (param_lines, hint_lines)
 }
 
-fn debug_hud_surface(_width: f32, height: f32, param_count: usize) -> GlassSurface {
-    let lines = hud_line_count(param_count);
-    let size = vec2(310.0, lines * 20.0 + 60.0);
+/// The panel size for exactly this HUD content: wide enough for its longest
+/// line (measured, not guessed — profile names and enum labels vary in
+/// width) and tall enough for every line.
+fn hud_size(param_lines: &[String], hint_lines: &[String]) -> Vec2 {
+    let mut max_w = 0.0f32;
+    for line in param_lines {
+        max_w = max_w.max(measure_text(line, None, HUD_PARAM_FONT, 1.0).width);
+    }
+    for line in hint_lines {
+        max_w = max_w.max(measure_text(line, None, HUD_HINT_FONT, 1.0).width);
+    }
+    let lines = (param_lines.len() + hint_lines.len()) as f32;
+    vec2(
+        max_w + HUD_TEXT_X * 2.0,
+        HUD_FIRST_BASELINE + (lines - 1.0) * HUD_LINE_H + HUD_BOTTOM_PAD,
+    )
+}
+
+fn debug_hud_surface(height: f32, param_lines: &[String], hint_lines: &[String]) -> GlassSurface {
+    let size = hud_size(param_lines, hint_lines);
     let center = vec2(16.0 + size.x * 0.5, height - 16.0 - size.y * 0.5);
-    let (material, optics, lighting) = preset(GlassStyle::Thin, true);
+    // Always a strongly-tinted, near-opaque dark panel — not the thin/
+    // adaptive glass used elsewhere. The HUD sits over whatever backdrop or
+    // profile the user is currently looking at, so its own readability
+    // can't depend on either; a fixed high-opacity dark panel with fixed
+    // light text is the only combination that's reliably legible.
+    let (mut material, optics, lighting) = preset(GlassStyle::Thin, true);
+    material.dark_tint = true;
+    material.tint_opacity = 0.92;
     GlassSurface {
         id: u64::MAX,
         geometry: GlassGeometry::RoundedRect {
@@ -179,71 +247,37 @@ fn save_profiles(profiles: &[GlassProfile; 3]) -> std::io::Result<()> {
 }
 
 fn draw_hud(
-    params: &[Param],
+    param_lines: &[String],
+    hint_lines: &[String],
     selected: usize,
-    background: usize,
-    profile: &str,
-    dark: bool,
-    scene: &GlassScene,
-    save_message: Option<&str>,
+    save_message_active: bool,
+    height: f32,
 ) {
-    // The HUD sits on its own glass panel (debug_hud_surface), which is
-    // frosted enough to show whatever's behind it through — so the right
-    // text color depends on the *backdrop*, not on `dark`. But `dark` is
-    // the best proxy available here without sampling pixels back from the
-    // GPU (which the normal render path must never do), and in practice it
-    // tracks what the user is looking at closely enough to fix the actual
-    // complaint: white-on-white was unreadable against the light "Clear"
-    // profile.
-    let (text_color, selected_color, hint_color) = if dark {
-        (WHITE, YELLOW, LIGHTGRAY)
-    } else {
-        (BLACK, Color::new(0.55, 0.35, 0.0, 1.0), DARKGRAY)
-    };
+    // The panel itself (debug_hud_surface) is now always a fixed dark,
+    // near-opaque tint, so the text on top of it can be a fixed light
+    // palette too — no more guessing at contrast against whatever backdrop
+    // or profile happens to be showing through.
+    let (text_color, selected_color, hint_color) = (WHITE, YELLOW, LIGHTGRAY);
 
-    let lines = hud_line_count(params.len());
-    let line_h = 20.;
-    let (x, y) = (16., screen_height() - 16. - lines * line_h - 12.);
-    let mut ty = y + 22.;
-    for (i, p) in params.iter().enumerate() {
+    let size = hud_size(param_lines, hint_lines);
+    let x = 16.;
+    let panel_top = height - 16. - size.y;
+    let mut ty = panel_top + HUD_FIRST_BASELINE;
+    for (i, line) in param_lines.iter().enumerate() {
         draw_text(
-            format!(
-                "{} {:<12} {:>7.2}",
-                if i == selected { ">" } else { " " },
-                p.label,
-                p.value
-            ),
-            x + 8.,
+            line,
+            x + HUD_TEXT_X,
             ty,
-            20.,
+            HUD_PARAM_FONT as f32,
             if i == selected { selected_color } else { text_color },
         );
-        ty += line_h;
+        ty += HUD_LINE_H;
     }
-    // Exactly HUD_HINT_LINES lines, always — a save confirmation replaces
-    // the last one in place instead of adding an 8th, so the panel above
-    // (sized for a fixed line count) never has to grow to fit it.
-    let hint_lines = [
-        format!("Profile {profile}  [P]  R: reset it"),
-        format!("Background {}/4  [1-4]", background + 1),
-        format!("Tint {}  [T]", if dark { "black" } else { "white" }),
-        format!("Quality {:?}  [Q]", scene.quality),
-        "Drag panels with the mouse".to_owned(),
-        "Arrows: select / adjust  H: hide".to_owned(),
-        save_message
-            .map(str::to_owned)
-            .unwrap_or_else(|| "D: scene debug   S: save all 3 profiles".to_owned()),
-    ];
-    debug_assert_eq!(hint_lines.len(), HUD_HINT_LINES);
     for (i, line) in hint_lines.iter().enumerate() {
-        let is_save_message = save_message.is_some() && i == hint_lines.len() - 1;
-        let color = if is_save_message {
-            if dark { GREEN } else { DARKGREEN }
-        } else {
-            hint_color
-        };
-        draw_text(line, x + 8., ty, 18., color);
-        ty += line_h;
+        let is_save_message = save_message_active && i == hint_lines.len() - 1;
+        let color = if is_save_message { GREEN } else { hint_color };
+        draw_text(line, x + HUD_TEXT_X, ty, HUD_HINT_FONT as f32, color);
+        ty += HUD_LINE_H;
     }
 }
 fn draw_debug(scene: &GlassScene) {
@@ -447,8 +481,19 @@ async fn main() {
         }
         apply_tuning(&mut scene, &params, dark);
         scene.frame += 1;
+        let (param_lines, hint_lines) = hud_texts(
+            &params,
+            selected,
+            profiles[profile].name,
+            background,
+            dark,
+            scene.quality,
+            save_message.as_ref().map(|(message, _)| message.as_str()),
+        );
         if show_hud {
-            scene.surfaces.push(debug_hud_surface(w, h, params.len()));
+            scene
+                .surfaces
+                .push(debug_hud_surface(h, &param_lines, &hint_lines));
         }
         let render_start = Instant::now();
         renderer.begin_backdrop(|| {
@@ -469,13 +514,11 @@ async fn main() {
         }
         if show_hud {
             draw_hud(
-                &params,
+                &param_lines,
+                &hint_lines,
                 selected,
-                background,
-                profiles[profile].name,
-                dark,
-                &scene,
-                save_message.as_ref().map(|(message, _)| message.as_str()),
+                save_message.is_some(),
+                h,
             );
         }
         if scene.frame >= 5
