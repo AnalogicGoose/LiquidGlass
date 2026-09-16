@@ -117,6 +117,22 @@ fn pill(id: u64, center: glam::Vec2) -> GlassSurface {
     }
 }
 
+/// Same size/shape for every style so the only thing that can differ
+/// between them in a rendered scene is the style's own material preset —
+/// makes a side-by-side comparison actually apples-to-apples.
+fn style_swatch(id: u64, center: glam::Vec2, style: GlassStyle) -> GlassSurface {
+    let (material, optics, lighting) = clear_profile(style, false);
+    GlassSurface {
+        id,
+        geometry: GlassGeometry::RoundedRect { center, size: vec2(220.0, 160.0), radius: 24.0, smoothing: 0.5 },
+        material,
+        optics,
+        lighting,
+        interaction: GlassInteraction::Idle,
+        style,
+    }
+}
+
 fn scenes() -> Vec<Scene> {
     let (w, h) = (WIDTH as f32, HEIGHT as f32);
     vec![
@@ -162,6 +178,36 @@ fn scenes() -> Vec<Scene> {
             // response in glass.frag (the surface below shows through the
             // one above, per stack_response in layer_glass()).
             surfaces: vec![panel(1, vec2(w * 0.42, h * 0.5), false), panel(2, vec2(w * 0.58, h * 0.5), false)],
+        },
+        Scene {
+            name: "style_gallery_bg1",
+            background: 0,
+            // Every GlassStyle preset, same size/shape, side by side. Before
+            // this scene, Thin/Prominent/Navigation were defined in
+            // preset() but never exercised by any example or regression
+            // scene — this at least confirms all five render distinctly
+            // and without error, even without a reference to calibrate
+            // Prominent/Navigation's specific values against yet.
+            surfaces: {
+                // 5 swatches, 220px wide, spaced 250px apart (30px gap) so
+                // none overlap — this gallery is meant to show each style
+                // distinctly, not exercise glass-on-glass stacking (that's
+                // "overlapping_panels_bg2", above).
+                let spacing = 250.0;
+                let start_x = w * 0.5 - spacing * 2.0;
+                let styles = [
+                    GlassStyle::Thin,
+                    GlassStyle::Control,
+                    GlassStyle::Regular,
+                    GlassStyle::Navigation,
+                    GlassStyle::Prominent,
+                ];
+                styles
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, style)| style_swatch((i + 1) as u64, vec2(start_x + spacing * i as f32, h * 0.5), style))
+                    .collect()
+            },
         },
     ]
 }
