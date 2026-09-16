@@ -8,6 +8,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 use super::error::LGResult;
+use super::texture::{LGTextureHandle, TextureRegistry};
 use crate::backend::gl::GlGlassRenderer;
 
 /// Resolves a GL function name to its address, exactly like
@@ -20,12 +21,17 @@ pub type LGGlProc = unsafe extern "C" fn(name: *const c_char) -> *const c_void;
 pub struct LiquidGlassContext {
     pub(crate) gl: glow::Context,
     pub(crate) renderer: GlGlassRenderer,
+    textures: TextureRegistry,
     last_error: Option<CString>,
 }
 
 impl LiquidGlassContext {
     pub(crate) fn set_error(&mut self, message: impl Into<Vec<u8>>) {
         self.last_error = CString::new(message).ok();
+    }
+
+    pub(crate) fn textures_mut(&mut self) -> &mut TextureRegistry {
+        &mut self.textures
     }
 }
 
@@ -48,6 +54,7 @@ pub unsafe extern "C" fn lg_create(loader: LGGlProc, width: f32, height: f32) ->
         Box::new(LiquidGlassContext {
             gl,
             renderer,
+            textures: TextureRegistry::new(),
             last_error: None,
         })
     }));
@@ -85,27 +92,20 @@ pub unsafe extern "C" fn lg_resize(ctx: *mut LiquidGlassContext, width: f32, hei
     }
 }
 
-/// Imports a host-owned GL texture as the scene backdrop for the next
-/// `lg_render_frame` call, cover-fit to the frame like `main.rs`'s
-/// `draw_cover`. The host retains ownership — SparkGlass samples it but
-/// never destroys it (FROZEN external-texture-ownership rule, §22).
+/// Draws a previously imported texture (see `lg_import_gl_texture`) as the
+/// scene backdrop for the next `lg_render_frame` call, cover-fit to the
+/// frame like `main.rs`'s `draw_cover`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lg_set_backdrop_gl_texture(
-    ctx: *mut LiquidGlassContext,
-    gl_texture_id: u32,
-    width: f32,
-    height: f32,
-) -> LGResult {
+pub unsafe extern "C" fn lg_set_backdrop(ctx: *mut LiquidGlassContext, texture: LGTextureHandle) -> LGResult {
     let Some(ctx) = (unsafe { ctx.as_mut() }) else {
         return LGResult::ErrorNullPointer;
     };
-    let Some(name) = std::num::NonZeroU32::new(gl_texture_id) else {
-        ctx.set_error("lg_set_backdrop_gl_texture: gl_texture_id must be non-zero");
+    let Some((native, size)) = ctx.textures_mut().get(texture) else {
+        ctx.set_error("lg_set_backdrop: unknown texture handle (call lg_import_gl_texture first)");
         return LGResult::ErrorInvalidTexture;
     };
-    let texture = glow::NativeTexture(name);
     match catch_unwind(AssertUnwindSafe(|| {
-        ctx.renderer.draw_backdrop(&ctx.gl, texture, glam::vec2(width, height));
+        ctx.renderer.draw_backdrop(&ctx.gl, native, size);
     })) {
         Ok(()) => LGResult::Ok,
         Err(_) => LGResult::ErrorPanic,

@@ -20,7 +20,10 @@ use glutin::surface::{GlSurface, Surface, SwapInterval, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use spark_glass_poc::backend::gl::upload_rgba8;
-use spark_glass_poc::ffi::{LGFrame, LGGlassElement, LGQuality, LiquidGlassContext, lg_create, lg_destroy, lg_present, lg_render_frame, lg_resize, lg_set_backdrop_gl_texture};
+use spark_glass_poc::ffi::{
+    LGFrame, LGGlassElement, LGQuality, LGTextureHandle, LiquidGlassContext, lg_create, lg_destroy, lg_import_gl_texture, lg_present,
+    lg_render_frame, lg_resize, lg_set_backdrop,
+};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -43,8 +46,7 @@ struct AppState {
     gl_surface: Surface<WindowSurface>,
     gl_context: PossiblyCurrentContext,
     ctx: *mut LiquidGlassContext,
-    background_id: u32,
-    background_size: (f32, f32),
+    background: LGTextureHandle,
     frame: u64,
 }
 
@@ -112,18 +114,17 @@ impl ApplicationHandler for App {
         let size = window.inner_size();
         let ctx = unsafe { lg_create(resolve_gl_proc, size.width as f32, size.height as f32) };
         assert!(!ctx.is_null(), "lg_create failed");
-        let backdrop_result = unsafe {
-            lg_set_backdrop_gl_texture(ctx, background.0.get(), image.width() as f32, image.height() as f32)
-        };
-        assert_eq!(backdrop_result as i32, 0, "lg_set_backdrop_gl_texture failed");
+        let background_handle = unsafe { lg_import_gl_texture(ctx, background.0.get(), image.width() as f32, image.height() as f32) };
+        assert_ne!(background_handle, 0, "lg_import_gl_texture failed");
+        let backdrop_result = unsafe { lg_set_backdrop(ctx, background_handle) };
+        assert_eq!(backdrop_result as i32, 0, "lg_set_backdrop failed");
 
         self.state = Some(AppState {
             window,
             gl_surface,
             gl_context,
             ctx,
-            background_id: background.0.get(),
-            background_size: (image.width() as f32, image.height() as f32),
+            background: background_handle,
             frame: 0,
         });
     }
@@ -136,7 +137,7 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
                 state.gl_surface.resize(&state.gl_context, NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap());
                 unsafe { lg_resize(state.ctx, size.width as f32, size.height as f32) };
-                unsafe { lg_set_backdrop_gl_texture(state.ctx, state.background_id, state.background_size.0, state.background_size.1) };
+                unsafe { lg_set_backdrop(state.ctx, state.background) };
                 state.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {

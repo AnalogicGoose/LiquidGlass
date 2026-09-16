@@ -16,6 +16,7 @@
  *   LD_LIBRARY_PATH=<target-dir>/debug /tmp/spark_glass_c_smoke
  */
 #include <EGL/egl.h>
+#include <GLES2/gl2.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -77,6 +78,44 @@ int main(void) {
         return 1;
     }
     printf("lg_create: OK\n");
+
+    /* A trivial 2x2 texture, uploaded directly with GLES2 calls (this
+     * program links against libGLESv2 itself) — stands in for whatever
+     * texture a real host would already have from its own rendering. */
+    GLuint gl_texture = 0;
+    glGenTextures(1, &gl_texture);
+    glBindTexture(GL_TEXTURE_2D, gl_texture);
+    unsigned char pixels[2 * 2 * 4] = {
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 255, 255, 0, 255,
+    };
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    LGTextureHandle backdrop = lg_import_gl_texture(ctx, gl_texture, 2.0f, 2.0f);
+    if (backdrop == 0) {
+        fprintf(stderr, "lg_import_gl_texture failed: %s\n", lg_last_error(ctx));
+        return 1;
+    }
+    printf("lg_import_gl_texture: OK (handle=%llu)\n", (unsigned long long) backdrop);
+
+    LGResult backdrop_result = lg_set_backdrop(ctx, backdrop);
+    if (backdrop_result != LG_OK) {
+        fprintf(stderr, "lg_set_backdrop failed: %d (%s)\n", backdrop_result, lg_last_error(ctx));
+        return 1;
+    }
+    printf("lg_set_backdrop: OK\n");
+
+    /* An unknown handle must be rejected, not silently accepted. */
+    LGResult bad_backdrop_result = lg_set_backdrop(ctx, backdrop + 1000);
+    if (bad_backdrop_result != LG_ERROR_INVALID_TEXTURE) {
+        fprintf(stderr, "expected LG_ERROR_INVALID_TEXTURE, got %d\n", bad_backdrop_result);
+        return 1;
+    }
+    printf("unknown-handle guard: OK (%s)\n", lg_last_error(ctx));
+
+    lg_release_texture(ctx, backdrop);
+    printf("lg_release_texture: OK\n");
 
     LGGlassElement element = {0};
     element.id = 1;

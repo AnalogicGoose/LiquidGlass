@@ -23,12 +23,24 @@ Everything below is either implemented-and-verified or an explicit gap — nothi
 
 ## Phase 2 — C ABI v0
 
-`src/ffi/` (`context.rs`, `frame.rs`, `error.rs`) exposes:
+`src/ffi/` (`context.rs`, `frame.rs`, `error.rs`, `texture.rs`) exposes:
 
 ```text
-lg_create / lg_destroy / lg_resize / lg_set_backdrop_gl_texture /
+lg_create / lg_destroy / lg_resize /
+lg_import_gl_texture / lg_release_texture / lg_set_backdrop /
 lg_render_frame / lg_present / lg_last_error
 ```
+
+Backdrop textures go through an explicit import step —
+`lg_import_gl_texture(ctx, gl_texture_id, width, height) -> LGTextureHandle`
+(an opaque `u64`, `0` always invalid) — rather than taking a raw `GLuint`
+directly on every call. This follows §22 of the master doc, which explicitly
+says the public/FFI surface must not depend directly on `GLuint`:
+`GLuint → lg_import_gl_texture(...) → LGTextureHandle → scene references the
+handle`. `lg_set_backdrop(ctx, handle)` and `lg_release_texture(ctx, handle)`
+consume it from there. The host still owns the underlying GL texture in all
+of this — `lg_release_texture` only forgets SparkGlass's reference, it never
+calls `glDeleteTextures`.
 
 All `extern "C"`, all panic-safe (`catch_unwind` at every boundary — no Rust
 unwind ever crosses it), all operating only on the opaque `LiquidGlassContext`
@@ -43,8 +55,11 @@ Verified two ways:
 - **`c_smoke/main.c` + `include/spark_glass.h`** prove the exit condition
   literally: a plain C program, built with `gcc`, linking directly against
   the crate's `cdylib` output (`libspark_glass_poc.so`) — no Rust anywhere in
-  that build. It creates a headless EGL pbuffer context and calls
-  `lg_create`/`lg_render_frame`/`lg_present`/`lg_destroy`, then deliberately
+  that build. It uploads a real GLES2 texture, imports it with
+  `lg_import_gl_texture`, sets it as the backdrop, and confirms an unknown
+  handle is rejected with `LG_ERROR_INVALID_TEXTURE`; then it creates a
+  headless EGL pbuffer context and calls
+  `lg_create`/`lg_render_frame`/`lg_present`/`lg_destroy`, and deliberately
   submits an `LGFrame` with a wrong `struct_size` to confirm the ABI-version
   guard is actually enforced across a real FFI boundary. `sizeof(LGFrame)`
   matched between `gcc` and `rustc` (40 bytes) with no manual padding in the

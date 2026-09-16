@@ -83,10 +83,28 @@ typedef struct {
     size_t element_count;
 } LGFrame;
 
+/*
+ * Opaque handle to a texture imported via lg_import_gl_texture. 0 is always
+ * invalid (a failed import returns 0), matching the usual C null-handle
+ * convention.
+ */
+typedef uint64_t LGTextureHandle;
+
 LiquidGlassContext *lg_create(LGGlProc loader, float width, float height);
 void lg_destroy(LiquidGlassContext *ctx);
 LGResult lg_resize(LiquidGlassContext *ctx, float width, float height);
-LGResult lg_set_backdrop_gl_texture(LiquidGlassContext *ctx, uint32_t gl_texture_id, float width, float height);
+
+/* Imports a host-owned GL texture, returning an opaque handle the scene can
+ * reference via lg_set_backdrop. The host retains ownership — SparkGlass
+ * samples it but never destroys it. Returns 0 on failure. */
+LGTextureHandle lg_import_gl_texture(LiquidGlassContext *ctx, uint32_t gl_texture_id, float width, float height);
+/* Forgets a handle. Does not destroy the underlying GL texture. */
+void lg_release_texture(LiquidGlassContext *ctx, LGTextureHandle handle);
+
+/* Draws a previously imported texture as the scene backdrop for the next
+ * lg_render_frame call, cover-fit to the frame. */
+LGResult lg_set_backdrop(LiquidGlassContext *ctx, LGTextureHandle texture);
+
 LGResult lg_render_frame(LiquidGlassContext *ctx, const LGFrame *frame);
 LGResult lg_present(LiquidGlassContext *ctx, int32_t dst_width, int32_t dst_height);
 /* Valid until the next call on this context; copy it out if you need to keep it. */

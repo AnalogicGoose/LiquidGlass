@@ -9,17 +9,21 @@
 //!
 //! ```text
 //! lg_create(loader, width, height)
-//! lg_set_backdrop_gl_texture(ctx, texture, width, height)   // per frame, or once for static art
+//! lg_import_gl_texture(ctx, gl_texture_id, width, height) -> handle   // once per texture
+//! lg_set_backdrop(ctx, handle)                                       // per frame, or once for static art
 //! lg_render_frame(ctx, &frame)
 //! lg_present(ctx, dst_width, dst_height)                    // with the host's target framebuffer bound
 //! lg_resize(ctx, width, height)                              // on resize
+//! lg_release_texture(ctx, handle)                            // when the host is done with it
 //! lg_destroy(ctx)
 //! ```
 
 mod context;
 mod error;
 mod frame;
+mod texture;
 
-pub use context::{LGGlProc, LiquidGlassContext, lg_create, lg_destroy, lg_last_error, lg_present, lg_resize, lg_set_backdrop_gl_texture};
+pub use context::{LGGlProc, LiquidGlassContext, lg_create, lg_destroy, lg_last_error, lg_present, lg_resize, lg_set_backdrop};
 pub use error::LGResult;
 pub use frame::{LGFrame, LGGlassElement, LGQuality, lg_render_frame};
+pub use texture::{LGTextureHandle, lg_import_gl_texture, lg_release_texture};
