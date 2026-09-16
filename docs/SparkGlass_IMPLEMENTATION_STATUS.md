@@ -211,6 +211,32 @@ render-target bug" above for exactly why a same-process capture can't catch
 that class of bug, and `docs/SparkGlass_HANDOFF.md` for the verification
 checklist to use instead in that case.
 
+## Visual reference material (new: unblocks Phase 8 calibration work)
+
+`docs/references/` now has real calibration material, which was the missing
+piece for any Phase 8 (advanced fidelity) work:
+
+- `references/figma-liquid-glass/` — the actual Figma file (`BBTOV`) this
+  project's shader constants were almost certainly calibrated against
+  originally: it uses the same source photo as `assets/image1.jpg`, has a
+  component literally named `Liquid Glass - Regular - Large` sized exactly
+  640×498 (matching every demo scene's main glass surface), and its
+  variable values match this codebase's `preset()`/`"Clear"` profile
+  defaults exactly on 5 of 7 comparable parameters. Two values
+  (`Refraction: 70`, `Opacity: 25`) don't transplant directly — see that
+  directory's `README.md` for why, and don't act on those two numbers
+  without resolving the ambiguity first.
+- `references/apple-liquid-glass/` — real macOS screenshots (Apple Music,
+  System Settings) showing actual Liquid Glass in production use. Useful
+  for structure and edge treatment, not for numeric calibration — see that
+  directory's `README.md` for why.
+
+Before starting any Phase 8 visual work, read both READMEs. They turn "we'd
+be guessing" (the blocker noted earlier for this phase) into "we have
+numbers for 5 parameters and know why 2 don't transplant yet" — a real
+difference, but still not a green light to invent values for the two that
+remain unresolved.
+
 ## Environment notes for whoever runs this next
 
 - The examples need a real GL/GLES-capable display. This was all developed
