@@ -34,6 +34,7 @@ jobs:
     # (geometry math, preset() bucketing, the unit tests) behaves
     # identically on Windows — floating point and struct layout included.
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -41,9 +42,13 @@ jobs:
         run: cargo build --release --lib
       - name: cargo test --lib
         run: cargo test --lib
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: Confirm the cdylib exports the C ABI
-        # dumpbin ships with the MSVC toolchain the runner already has.
-        # This is the Windows-native equivalent of the
+        # dumpbin ships with the MSVC toolchain the runner already has, but
+        # only on PATH inside a Developer Command Prompt — ilammy/msvc-dev-cmd
+        # sets that up for every later step in this job (first attempt at
+        # this workflow forgot that and got "dumpbin not recognized"). This
+        # check is the Windows-native equivalent of the
         # `x86_64-w64-mingw32-objdump -p` check used to verify the mingw
         # cross-build locally — same claim, proven on the real target this
         # time.
@@ -71,12 +76,25 @@ jobs:
     # first time this project has ever run SparkGlass-rendered pixels
     # through ANGLE at all, on any platform.
     runs-on: windows-latest
+    # ANGLE builds from source in vcpkg (it's a slice of Chromium's shader
+    # compiler + D3D11 backend) and commonly takes 20-40 minutes on a cold
+    # cache. That's real work, not a hang — but bound it explicitly so an
+    # actual hang fails loudly instead of running until GitHub's default
+    # 6-hour job timeout.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: cargo build --release --lib
         run: cargo build --release --lib
       - name: Install ANGLE (EGL/GLESv2) via vcpkg
+        # The classic/desktop triplet, not a UWP package — c_smoke.exe is a
+        # plain Win32 console app. (Microsoft's ANGLE.WindowsStore NuGet
+        # package was considered instead, since it's prebuilt and much
+        # faster, but its own docs say it's UWP-only and a desktop app
+        # "must obtain the binaries via another method" — so this is the
+        # correct choice, just a slower one.)
         run: |
           vcpkg install angle:x64-windows
         shell: pwsh
@@ -88,15 +106,19 @@ jobs:
           if (-not (Test-Path $root)) { throw "vcpkg install root not found at $root" }
           echo "root=$root" >> $env:GITHUB_OUTPUT
       - name: Compile and link c_smoke with MSVC
-        shell: cmd
+        # ilammy/msvc-dev-cmd already set up the Developer environment for
+        # this job, so cl.exe/link.exe are just on PATH here — no manual
+        # vcvars64.bat call needed (the first draft of this workflow
+        # hardcoded a vcvars64.bat path per-VS-edition instead; this is
+        # both simpler and more portable across runner images).
+        shell: pwsh
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-          cl.exe /nologo c_smoke\main.c ^
-            /I include ^
-            /I "${{ steps.vcpkg.outputs.root }}\include" ^
-            /Fe:c_smoke.exe ^
-            /link /LIBPATH:target\release ^
-            /LIBPATH:"${{ steps.vcpkg.outputs.root }}\lib" ^
+          cl.exe /nologo c_smoke\main.c `
+            /I include `
+            /I "${{ steps.vcpkg.outputs.root }}\include" `
+            /Fe:c_smoke.exe `
+            /link /LIBPATH:target\release `
+            /LIBPATH:"${{ steps.vcpkg.outputs.root }}\lib" `
             spark_glass.dll.lib libEGL.lib libGLESv2.lib
       - name: Copy runtime DLLs next to the smoke test
         shell: pwsh
