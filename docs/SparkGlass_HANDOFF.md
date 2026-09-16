@@ -96,6 +96,28 @@ resuming heavy GUI-window/screenshot activity, since a new session has no
 way to know if that context still applies (a fresh session has no memory of
 this exchange) or whether the user's situation has changed since.
 
+**Second caution, discovered later the same session:** after many rounds of
+opening a test window and killing it with `pkill -9` (dozens, across
+`sandbox`/`gtk_glarea`/`gtk_glarea_overlay`), *every* windowed example
+started hanging indefinitely on startup — both `winit`+`glutin` and GTK4,
+two completely unrelated windowing stacks, failing identically. Headless
+tools (`examples/visual_regression.rs`, `c_smoke`, both using an EGL
+pbuffer with no on-screen surface at all) kept working perfectly throughout
+— proving this isn't a code regression, and confirming the render logic
+itself was never in question. KWin was still alive with no errors in
+`journalctl`. The strong suspicion: `SIGKILL` never gives the client a
+chance to cleanly release its Wayland `xdg_toplevel`/surface, and enough
+abrupt kills in a row left the compositor's Wayland state degraded for
+*new* toplevel surfaces specifically, from this client. Never got to root
+cause it further or confirm a fix (a session logout/re-login would very
+likely clear it, but that's the user's call, not something to do
+unilaterally). **Lesson: prefer closing test windows normally (send a close
+event / let the app's own exit path with `event_loop.exit()` run) over
+`pkill -9` where possible, and if `-9` is truly needed, don't lean on it
+dozens of times in one session** — and if windowed examples start hanging
+for no code-side reason, check whether this is why before assuming
+something broke.
+
 ## Who owns what, architecturally
 
 **GPT is the project's architect/orchestrator** — it wrote
@@ -113,10 +135,17 @@ not improvising an answer solo.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`a14a6bf` as of this
+1. **Nothing is currently broken** — the last commit (`12591fa` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
-   from any angle below.
+   from any angle below. **Except:** on-screen windowed examples are hanging
+   on startup right now due to the Wayland/compositor state issue in item 5
+   above — this is environmental, not a code problem (proven by the headless
+   regression tools still passing clean). Check whether that's resolved
+   (e.g. after a session restart) before assuming a windowed example is
+   actually broken; use `scripts/visual_regression.sh` and
+   `scripts/verify_backends.sh`'s non-windowed checks (`c_smoke`, unit
+   tests) for verification in the meantime.
 2. **`docs/SparkGlass_ROADMAP.md` is now the authoritative phase plan from
    Phase 8 onward** — it supersedes the master doc's old Phase 8 section
    (which now says so explicitly). Phase 8.1 (Material Style System) is
