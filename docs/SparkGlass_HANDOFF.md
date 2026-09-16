@@ -98,23 +98,17 @@ this exchange) or whether the user's situation has changed since.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`0fe9fac` as of this
+1. **Nothing is currently broken** — the last commit (`2c85697` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
    from any angle below.
-2. **Phase 1 (freeze semantics), for real this time.** `src/glass.rs` has
-   the right shapes informally but was never deliberately reviewed against
-   the master doc's semantic model. The FFI texture-handle work in this
-   session's last commit is an example of the kind of gap worth hunting for
-   — go through the master doc's Phase 1 checklist (Scene / Backdrop /
-   Container / GlassElement / Material / TextureHandle / RenderTarget) and
-   check each one actually matches what's implemented.
-3. **Automate the regression checks.** Right now "does it still match" means
-   manually running each example with `SPARK_GLASS_SANDBOX_CAPTURE` set and
-   `cmp`-ing PNGs by hand. A `cargo test` (or shell script) that does this
-   automatically, plus the C smoke test, would catch the next render-target
-   bug (or similar) immediately instead of requiring a manual live-screenshot
-   hunt.
+2. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
+   found and fixed: `GlassScene::new` was fabricating a hardcoded demo
+   `GlassGroup` nothing ever read. Go through the rest of the master doc's
+   Phase 1 checklist (Scene / Backdrop / Container / GlassElement / Material
+   / TextureHandle / RenderTarget) the same way — grep for who actually
+   reads each field before trusting a doc comment about it.
+3. ~~Automate the regression checks~~ — done, see `scripts/verify_backends.sh`.
 4. **§37 GL state contract** — the overlay experiment
    (`examples/gtk_glarea_overlay.rs`) is one data point on GTK4/Mesa/Wayland.
    Worth checking whether a heavier native-widget scene (more widgets,
