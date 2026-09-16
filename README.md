@@ -421,6 +421,19 @@ GTK remains responsible for:
 
 LiquidGlass only performs the glass rendering while the required graphics context is active.
 
+**Status:** proven at `examples/gtk_glarea.rs` (dev-dependency `gtk4` 0.11, gtk4-rs).
+`GLArea::connect_render` receives control with GTK's `GdkGLContext` already
+current and its own framebuffer already bound; the renderer never creates a
+context or rebinds a framebuffer, it only uses what's current — exactly this
+section's contract. GL function addresses are resolved via `eglGetProcAddress`
+(dlopened from `libEGL.so.1` directly; the `epoxy` crate that gtk-rs examples
+normally use for this is currently unusable — its `gl_generator` dependency
+requires a yanked `xml-rs` release with no fixed version available). Captured
+output is byte-identical to `examples/sandbox.rs` and `examples/ffi_smoke.rs`.
+Not yet exercised: native GTK controls actually composited around/over the
+glass surface, and the GLX fallback path for X11 sessions (only EGL is wired
+up, since Wayland is what this was validated on).
+
 ---
 
 # Vulkan
@@ -1034,6 +1047,9 @@ Validate:
 ```text
 GTK 4 + GtkGLArea + LiquidGlass
 ```
+
+**Status:** implemented — `examples/gtk_glarea.rs`. See the "Linux" section
+above for what's proven and what's still missing.
 
 ---
 
