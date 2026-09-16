@@ -1,7 +1,11 @@
 [package]
-name = "liquid_glass_poc"
+name = "spark_glass_poc"
 version = "0.1.0"
 edition = "2024"
+description = "SparkGlass — an Analogic Goose GPU visual-material proof of concept inspired by Apple's Liquid Glass"
+license = "MIT"
+authors = ["Analogic Goose"]
+repository = "https://github.com/AnalogicGoose/LiquidGlass"
 
 [dependencies]
 macroquad = "0.4.16"

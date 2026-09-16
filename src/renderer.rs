@@ -106,7 +106,7 @@ impl MacroquadGlassRenderer {
                 ],
             },
         )
-        .expect("Liquid Glass shader must compile");
+        .expect("SparkGlass shader must compile");
         let blur = load_material(
             ShaderSource::Glsl {
                 vertex: VERTEX_SHADER,

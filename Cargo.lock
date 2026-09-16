@@ -260,14 +260,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
-name = "liquid_glass_poc"
-version = "0.1.0"
-dependencies = [
- "image",
- "macroquad",
-]
-
-[[package]]
 name = "macroquad"
 version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -483,6 +475,14 @@ name = "smallvec"
 version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
+
+[[package]]
+name = "spark_glass_poc"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "macroquad",
+]
 
 [[package]]
 name = "syn"

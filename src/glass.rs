@@ -1,4 +1,4 @@
-//! Platform-neutral Liquid Glass vocabulary.
+//! Platform-neutral SparkGlass vocabulary.
 //!
 //! This module deliberately has no knowledge of Macroquad, WinUI, GTK, or a
 //! GPU API.  A product UI requests a semantic `GlassStyle`; a platform

@@ -1,4 +1,11 @@
-# LiquidGlass
+# Analogic Goose Presents: SPARK GLASS
+
+SparkGlass is a GPU visual-material proof of concept by Analogic Goose. It
+recreates Apple's Liquid Glass optical character in Rust and serves as the
+visual reference for a future windowless, embeddable renderer.
+
+Copyright © 2026 Analogic Goose. Licensed under the MIT License; see
+[LICENSE](LICENSE).
 
 Prueba de concepto del material **Liquid Glass** de Apple (iOS 26) en Rust con
 [macroquad](https://github.com/not-fl3/macroquad) y shaders GLSL.
@@ -128,16 +135,16 @@ en `Low` se elimina refracción y en `Fallback`/reduced transparency se elimina
 frost. `Q` recorre los niveles durante el desarrollo. `D` muestra límites y el
 estado de la escena para inspeccionar coordenadas y el backdrop compartido.
 Para capturas reproducibles del framebuffer, se puede definir
-`LIQUID_GLASS_CAPTURE` con una ruta PNG antes de ejecutar el binario; la demo
+`SPARK_GLASS_CAPTURE` con una ruta PNG antes de ejecutar el binario; la demo
 guarda el quinto frame y termina.
-`LIQUID_GLASS_TEST_OVERLAP=1` coloca la cápsula detrás del panel grande para
+`SPARK_GLASS_TEST_OVERLAP=1` coloca la cápsula detrás del panel grande para
 comprobar visualmente la composición y refracción glass-on-glass.
-`LIQUID_GLASS_TEST_FROST` permite fijar el frost de esa captura (por ejemplo,
+`SPARK_GLASS_TEST_FROST` permite fijar el frost de esa captura (por ejemplo,
 `30`) para regresiones de blur e inner shadows.
 Para medir el binario release durante un número fijo de frames, define
-`LIQUID_GLASS_BENCHMARK_FRAMES=180`. La salida incluye frame time/FPS y el
+`SPARK_GLASS_BENCHMARK_FRAMES=180`. La salida incluye frame time/FPS y el
 tiempo de envío CPU del pipeline (`render_cpu_ms`). Se puede combinar con
-`LIQUID_GLASS_TEST_OVERLAP=1` y `LIQUID_GLASS_TEST_FROST=30`.
+`SPARK_GLASS_TEST_OVERLAP=1` y `SPARK_GLASS_TEST_FROST=30`.
 
 ## Estructura
 
@@ -152,7 +159,13 @@ src/
 assets/        fondos de prueba
 ```
 
-## Créditos
+## About / Créditos
+
+**Analogic Goose Presents: SPARK GLASS**
+
+SparkGlass is an independent project by Analogic Goose. “Liquid Glass” is
+Apple's design/material terminology and is referenced here only to describe
+the visual target. SparkGlass is not affiliated with or endorsed by Apple.
 
 - Punto de partida y fondos de prueba:
   [archisvaze/liquid-glass](https://github.com/archisvaze/liquid-glass).

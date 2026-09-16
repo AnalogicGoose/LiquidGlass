@@ -56,7 +56,7 @@ const PROFILES: [GlassProfile; 3] = [
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Liquid Glass PoC".to_owned(),
+        window_title: "Analogic Goose Presents: SPARK GLASS".to_owned(),
         window_width: 1280,
         window_height: 800,
         sample_count: 4,
@@ -87,6 +87,27 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
             ..Default::default()
         },
     );
+}
+
+fn debug_hud_surface(_width: f32, height: f32) -> GlassSurface {
+    let lines = 16.0;
+    let size = vec2(310.0, lines * 20.0 + 12.0);
+    let center = vec2(16.0 + size.x * 0.5, height - 16.0 - size.y * 0.5);
+    let (material, optics, lighting) = preset(GlassStyle::Thin, true);
+    GlassSurface {
+        id: u64::MAX,
+        geometry: GlassGeometry::RoundedRect {
+            center,
+            size,
+            radius: 14.0,
+            smoothing: 0.45,
+        },
+        material,
+        optics,
+        lighting,
+        interaction: GlassInteraction::Idle,
+        style: GlassStyle::Control,
+    }
 }
 fn apply_profile(profile: &GlassProfile, params: &mut [Param], dark: &mut bool) {
     for (param, value) in params.iter_mut().zip(profile.values) {
@@ -120,13 +141,6 @@ fn draw_hud(
     let lines = params.len() as f32 + 7.;
     let line_h = 20.;
     let (x, y) = (16., screen_height() - 16. - lines * line_h - 12.);
-    draw_rectangle(
-        x,
-        y,
-        310.,
-        lines * line_h + 12.,
-        Color::new(0., 0., 0., 0.45),
-    );
     let mut ty = y + 22.;
     for (i, p) in params.iter().enumerate() {
         draw_text(
@@ -186,8 +200,8 @@ fn draw_debug(scene: &GlassScene) {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut capture_path = std::env::var_os("LIQUID_GLASS_CAPTURE").map(std::path::PathBuf::from);
-    let benchmark_frames = std::env::var("LIQUID_GLASS_BENCHMARK_FRAMES")
+    let mut capture_path = std::env::var_os("SPARK_GLASS_CAPTURE").map(std::path::PathBuf::from);
+    let benchmark_frames = std::env::var("SPARK_GLASS_BENCHMARK_FRAMES")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|frames| *frames >= 3);
@@ -229,7 +243,7 @@ async fn main() {
             style: GlassStyle::Control,
         },
     ]);
-    if std::env::var_os("LIQUID_GLASS_TEST_OVERLAP").is_some() {
+    if std::env::var_os("SPARK_GLASS_TEST_OVERLAP").is_some() {
         scene.surfaces[1].geometry = scene.surfaces[1]
             .geometry
             .with_center(vec2(w * 0.5, h * 0.68));
@@ -249,7 +263,7 @@ async fn main() {
     let (mut selected, mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
         (0usize, true, false, false, 0usize, None::<Vec2>);
     apply_profile(&PROFILES[profile], &mut params, &mut dark);
-    if let Ok(value) = std::env::var("LIQUID_GLASS_TEST_FROST")
+    if let Ok(value) = std::env::var("SPARK_GLASS_TEST_FROST")
         && let Ok(frost) = value.parse::<f32>()
     {
         params[3].value = frost.clamp(params[3].min, params[3].max);
@@ -325,6 +339,9 @@ async fn main() {
         }
         apply_tuning(&mut scene, &params, dark);
         scene.frame += 1;
+        if show_hud {
+            scene.surfaces.push(debug_hud_surface(w, h));
+        }
         let render_start = Instant::now();
         renderer.begin_backdrop(|| {
             if let Some(texture) = &backgrounds[background] {
@@ -332,6 +349,9 @@ async fn main() {
             }
         });
         renderer.render(&scene, w, h);
+        if show_hud {
+            scene.surfaces.pop();
+        }
         if scene.frame > 2 {
             frame_samples.push(dt * 1000.0);
             render_samples.push(render_start.elapsed().as_secs_f32() * 1000.0);
