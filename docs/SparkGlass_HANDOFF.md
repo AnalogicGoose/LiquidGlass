@@ -98,11 +98,24 @@ this exchange) or whether the user's situation has changed since.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`495bf5e` as of this
-   writing, which completed the SparkGlass rename and dropped the `_poc`
-   crate name to `spark_glass`) left everything building clean and passing
-   every regression check described in `SparkGlass_IMPLEMENTATION_STATUS.md`.
-   Safe to pick up from any angle below.
+1. **Nothing is currently broken** — the last commit (`b0e5838` as of this
+   writing) left everything building clean and passing every regression
+   check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
+   from any angle below.
+1a. **The Phase 8 blocker noted earlier this session is now partially
+   resolved.** `docs/references/` has real calibration material now: the
+   actual Figma file the shader constants were almost certainly calibrated
+   against originally (same source photo as `assets/image1.jpg`, a component
+   literally named and sized to match our demo scenes exactly), plus real
+   macOS screenshots. Read `docs/references/figma-liquid-glass/README.md`
+   before touching any shader constant — it has the exact numbers pulled via
+   `get_variable_defs`, which 5 of 7 already match, and explains why the
+   other 2 (`Refraction: 70`, `Opacity: 25`) should NOT be transplanted
+   directly without more investigation. The Figma MCP server needs
+   authentication each new session (`mcp__plugin_figma_figma__authenticate`)
+   and `get_design_context` doesn't work here (needs Figma desktop, not
+   available on this Linux/browser-only setup) — use `get_metadata` /
+   `get_screenshot` / `get_variable_defs` instead, which all work fine.
 2. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
    found and fixed: `GlassScene::new` was fabricating a hardcoded demo
    `GlassGroup` nothing ever read. Go through the rest of the master doc's
