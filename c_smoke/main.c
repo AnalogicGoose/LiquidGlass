@@ -199,6 +199,43 @@ int main(void) {
     }
     printf("struct_size guard: OK (%s)\n", sg_last_error(ctx));
 
+    /* SG_ERROR_NULL_POINTER is declared but was never actually exercised
+     * anywhere before this: a C caller passing NULL must get a clean error
+     * code back, not a segfault. If any of these crash, this whole program
+     * crashes instead of printing "All checks passed" — that failure mode
+     * *is* the test. */
+    if (sg_resize(NULL, 100.0f, 100.0f) != SG_ERROR_NULL_POINTER) {
+        fprintf(stderr, "sg_resize(NULL, ...) did not return SG_ERROR_NULL_POINTER\n");
+        return 1;
+    }
+    if (sg_import_gl_texture(NULL, gl_texture, 2.0f, 2.0f) != 0) {
+        fprintf(stderr, "sg_import_gl_texture(NULL, ...) did not return 0\n");
+        return 1;
+    }
+    sg_release_texture(NULL, 1); /* must be a safe no-op */
+    if (sg_set_backdrop(NULL, 1) != SG_ERROR_NULL_POINTER) {
+        fprintf(stderr, "sg_set_backdrop(NULL, ...) did not return SG_ERROR_NULL_POINTER\n");
+        return 1;
+    }
+    if (sg_render_frame(NULL, &frame) != SG_ERROR_NULL_POINTER) {
+        fprintf(stderr, "sg_render_frame(NULL, ...) did not return SG_ERROR_NULL_POINTER\n");
+        return 1;
+    }
+    if (sg_render_frame(ctx, NULL) != SG_ERROR_NULL_POINTER) {
+        fprintf(stderr, "sg_render_frame(ctx, NULL) did not return SG_ERROR_NULL_POINTER\n");
+        return 1;
+    }
+    if (sg_present(NULL, 100, 100) != SG_ERROR_NULL_POINTER) {
+        fprintf(stderr, "sg_present(NULL, ...) did not return SG_ERROR_NULL_POINTER\n");
+        return 1;
+    }
+    if (sg_last_error(NULL) != NULL) {
+        fprintf(stderr, "sg_last_error(NULL) did not return NULL\n");
+        return 1;
+    }
+    sg_destroy(NULL); /* must be a safe no-op */
+    printf("NULL-pointer safety: OK (every context-taking function survived a NULL ctx)\n");
+
     sg_destroy(ctx);
     printf("sg_destroy: OK\nAll checks passed.\n");
     return 0;

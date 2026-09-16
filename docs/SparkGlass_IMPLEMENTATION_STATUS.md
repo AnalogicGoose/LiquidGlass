@@ -95,11 +95,18 @@ Verified two ways:
   previously untested through the C ABI — Phase 3's own acceptance criteria
   explicitly call out "resize behavior is correct"), then deliberately
   submits an `SGFrame` with a wrong `struct_size` to confirm the ABI-version
-  guard is actually enforced across a real FFI boundary, before
-  `sg_destroy`. `sizeof(SGFrame)` matched between `gcc` and `rustc`
-  (40 bytes) with no manual padding in the header, confirming the
-  `#[repr(C)]` layout really is what the header claims. Build/run
-  instructions are in a comment at the top of that file.
+  guard is actually enforced across a real FFI boundary; then it calls
+  every context-taking function (`sg_resize`, `sg_import_gl_texture`,
+  `sg_release_texture`, `sg_set_backdrop`, `sg_render_frame` — both a NULL
+  context and a NULL frame pointer — `sg_present`, `sg_last_error`,
+  `sg_destroy`) with a `NULL` context and confirms each returns
+  `SG_ERROR_NULL_POINTER` (or a safe no-op / `NULL` return, for the
+  `void`/pointer-returning ones) instead of crashing — `SG_ERROR_NULL_
+  POINTER` existed as a declared error code from the start but had never
+  actually been exercised by anything before this. `sizeof(SGFrame)`
+  matched between `gcc` and `rustc` (40 bytes) with no manual padding in the
+  header, confirming the `#[repr(C)]` layout really is what the header
+  claims. Build/run instructions are in a comment at the top of that file.
 
 Result codes and quality levels are declared in the C header as `int32_t`,
 not a C `enum` — a C enum's underlying type is implementation-defined, while
