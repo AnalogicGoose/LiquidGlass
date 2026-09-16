@@ -23,6 +23,66 @@ Everything below is either implemented-and-verified or an explicit gap — nothi
 
 ---
 
+## Phase 0 — Reference app overhaul: unified demos, real widgets, glass-skinned panel
+
+`src/main.rs` (`cargo run`) went through a significant UI rework, prompted
+directly by the team using it: the old text-drawn HUD (Left/Right-hold to
+adjust a value, one tunable scene) didn't let them see everything the
+material can do, and its debug panel looked nothing like SparkGlass itself.
+
+- **`DemoScene` enum** (7 variants: `Reference`, `PanelOnly`, `PillOnly`,
+  `DarkTintPanel`, `OverlappingPanels`, `StyleGallery`,
+  `AppleReference`) — navigable via `[`/`]` or the panel's buttons,
+  mirrors `examples/visual_regression.rs`'s named scenes so both tools
+  agree on what they look like. Only `Reference` is driven by the
+  config-mode sliders/profiles; the rest are fixed comparison renders.
+- **`AppleReference`** loads the real macOS screenshots in
+  `docs/references/apple-liquid-glass/` from disk at runtime (not
+  embedded — this is a dev tool, always run from the repo root) so "how
+  does real Apple glass behave" can be answered inside the same running
+  app via Prev/Next buttons, instead of a separate image viewer.
+- **The config panel is now real SparkGlass**, not a plain UI box —
+  `config_panel_glass()` renders an actual `GlassSurface` behind it, and
+  `build_glass_skin()` reskins every macroquad UI widget with a
+  transparent/near-transparent background (via the public `StyleBuilder`
+  API — `Style`'s own fields are `pub(crate)` inside macroquad, so a
+  cloned-and-mutated default skin wasn't an option) so the glass shows
+  through instead of macroquad's own gray chrome.
+- **All 12 tunable parameters are exposed**, not just the original 9 —
+  `clear_dimming`/`adaptive_response`/`ambient_reflection` (Phase 8.5/8.8)
+  now have real sliders, so they're something the team can actually see
+  and tune live instead of only existing in `parameter_sweep.rs`'s static
+  output. `GlassProfile.values` grew from `[f32; 9]` to `[f32; 12]` with
+  the 3 new slots defaulting to `0.` on every existing profile — each
+  one's already-proven no-op value, so Clear/White tint/Black tint look
+  exactly as before unless someone moves those sliders.
+- **A "Cycle interaction" button** lets the Phase 9.5 edge glow be
+  previewed (Idle → Hovered → Selected → Pressed → Dragged → Idle)
+  without needing to hold a mouse drag.
+- Sliders use macroquad's own `widgets::Slider`, which already bundles a
+  numeric input box — covers "sliders, input boxes" as one widget rather
+  than two separate features.
+
+**Verified:** `cargo test --lib`, `scripts/verify_backends.sh`, and
+`scripts/visual_regression.sh` all still pass (this only touched
+`src/main.rs`, which none of those compare against — see Phase 4's notes
+on why `examples/sandbox.rs` is the actual regression baseline). The
+panel's real glass background, all 12 sliders (with full, untruncated
+labels after widening `label_width`), and the demo/profile navigation
+were confirmed with real OS-level screenshots of the running window, not
+assumed from reading the code.
+
+**Not done:** clicking through `AppleReference`'s Prev/Next buttons and
+confirming each image actually loads wasn't verified by an agent this
+round (no input-automation tool available in this environment) — the
+loading code (`load_reference_texture`) was verified by code review only.
+If it silently fails for a bad path, the demo just shows nothing/whatever
+was behind it, not a crash (`Option`-returning, not `.expect()`-panicking,
+unlike `load_background`'s embedded-assets counterpart) — worth an actual
+click-through next session.
+
+---
+
 ## Phase 1 — Semantic scene model (ongoing audit)
 
 Not "frozen on purpose" yet — informally in decent shape, but never

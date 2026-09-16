@@ -13,6 +13,11 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      # main.rs is the macroquad Linux reference/dev-tool binary — not
+      # part of the `--lib` target either job here builds, so changes to
+      # it can never affect this workflow's outcome. Excluded so it stops
+      # triggering a ~20-40min ANGLE build for nothing.
+      - "!src/main.rs"
       - "include/**"
       - "c_smoke/**"
       - "Cargo.toml"
@@ -20,6 +25,7 @@ on:
   pull_request:
     paths:
       - "src/**"
+      - "!src/main.rs"
       - "include/**"
       - "c_smoke/**"
       - "Cargo.toml"
@@ -98,13 +104,18 @@ jobs:
       - name: Cache vcpkg's built ANGLE binaries
         # Building ANGLE from source is the slow part of this job (20-40
         # min cold); vcpkg's binary caching means every run after the
-        # first reuses the compiled output instead of rebuilding it. Keyed
-        # on the runner image so a GitHub-side toolchain bump invalidates
-        # it automatically rather than silently reusing stale binaries.
+        # first reuses the compiled output instead of rebuilding it. Key
+        # is deliberately NOT hashFiles(this workflow) — that seemed like
+        # a reasonable invalidation trigger at first, but this file gets
+        # edited on nearly every iteration while debugging it, which
+        # meant the cache key changed almost every run and never actually
+        # hit. Bump the trailing version suffix by hand if the pinned
+        # ANGLE/vcpkg port version ever needs to change; runner.os alone
+        # still invalidates it on a GitHub-side image change.
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\vcpkg-cache
-          key: vcpkg-angle-x64-windows-${{ runner.os }}-${{ hashFiles('.github/workflows/windows.yml') }}
+          key: vcpkg-angle-x64-windows-${{ runner.os }}-v1
       - name: Install ANGLE (EGL/GLESv2) via vcpkg
         # The classic/desktop triplet, not a UWP package — c_smoke.exe is a
         # plain Win32 console app. (Microsoft's ANGLE.WindowsStore NuGet
