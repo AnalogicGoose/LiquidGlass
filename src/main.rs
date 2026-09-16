@@ -145,10 +145,13 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
 }
 
 /// Demo scenes navigable via `[`/`]` or the config panel's Demo buttons.
-/// Only `Reference` is driven by the config-mode sliders/profiles below —
-/// the others are fixed comparison scenes to look at, not tune, mirroring
-/// `examples/visual_regression.rs`'s named scenes so both tools agree on
-/// what these look like.
+/// `Reference` and `AppleReference` are driven by the config-mode sliders/
+/// profiles below (AppleReference is the same tunable glass, just over a
+/// real Apple screenshot instead of a stock photo, so ambient_reflection/
+/// adaptive_response can be judged against the lighting they're meant to
+/// react to) — the rest are fixed comparison scenes to look at, not tune,
+/// mirroring `examples/visual_regression.rs`'s named scenes so both tools
+/// agree on what those look like.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DemoScene {
     Reference,
@@ -177,7 +180,7 @@ impl DemoScene {
             DemoScene::DarkTintPanel => "Dark tint panel",
             DemoScene::OverlappingPanels => "Overlapping panels",
             DemoScene::StyleGallery => "Style gallery",
-            DemoScene::AppleReference => "Apple reference (real macOS)",
+            DemoScene::AppleReference => "Apple reference (our glass, tunable)",
         }
     }
     fn index(self) -> usize {
@@ -274,10 +277,14 @@ fn build_demo_surfaces(demo: DemoScene, w: f32, h: f32) -> Vec<GlassSurface> {
             .map(|(i, style)| style_swatch((i + 1) as u64, vec2(start_x + spacing * i as f32, h * 0.5), style))
             .collect()
         }
-        // No glass at all — this scene exists purely to look at a real
-        // Apple screenshot full-screen (see APPLE_REFERENCES / main()'s
-        // backdrop logic), for direct comparison against the other demos.
-        DemoScene::AppleReference => vec![],
+        // Our own glass, tunable with the same sliders as Reference, over
+        // a real Apple screenshot as the backdrop (see APPLE_REFERENCES /
+        // main()'s backdrop logic) instead of a stock photo — so
+        // ambient_reflection/adaptive_response can be judged against the
+        // exact lighting/color they're meant to react to, not a generic
+        // one. Draggable like every other demo surface, so it can be
+        // moved onto whatever part of the screenshot is worth comparing.
+        DemoScene::AppleReference => vec![panel(1, vec2(w * 0.5, h * 0.5), false)],
     }
 }
 
@@ -619,7 +626,26 @@ async fn main() {
                     ui.separator();
 
                     match demo_scene {
-                        DemoScene::Reference => {
+                        DemoScene::Reference | DemoScene::AppleReference => {
+                            if demo_scene == DemoScene::AppleReference {
+                                let (path, label) = APPLE_REFERENCES[reference_index];
+                                widgets::Label::new(format!(
+                                    "Reference {}/{}: {label}",
+                                    reference_index + 1,
+                                    APPLE_REFERENCES.len()
+                                ))
+                                .ui(ui);
+                                widgets::Label::new(path).ui(ui);
+                                if widgets::Button::new("< Prev photo").ui(ui) {
+                                    reference_index =
+                                        (reference_index + APPLE_REFERENCES.len() - 1) % APPLE_REFERENCES.len();
+                                }
+                                ui.same_line(0.0);
+                                if widgets::Button::new("Next photo >").ui(ui) {
+                                    reference_index = (reference_index + 1) % APPLE_REFERENCES.len();
+                                }
+                                ui.separator();
+                            }
                             widgets::Label::new(format!("Profile: {}", profiles[profile].name)).ui(ui);
                             if widgets::Button::new("< Prev").ui(ui) {
                                 profile = (profile + profiles.len() - 1) % profiles.len();
@@ -676,27 +702,8 @@ async fn main() {
                                 save_message = Some((message, Instant::now()));
                             }
                         }
-                        DemoScene::AppleReference => {
-                            let (path, label) = APPLE_REFERENCES[reference_index];
-                            widgets::Label::new(format!(
-                                "Reference {}/{}: {label}",
-                                reference_index + 1,
-                                APPLE_REFERENCES.len()
-                            ))
-                            .ui(ui);
-                            widgets::Label::new(path).ui(ui);
-                            if widgets::Button::new("< Prev").ui(ui) {
-                                reference_index =
-                                    (reference_index + APPLE_REFERENCES.len() - 1) % APPLE_REFERENCES.len();
-                            }
-                            ui.same_line(0.0);
-                            if widgets::Button::new("Next >").ui(ui) {
-                                reference_index = (reference_index + 1) % APPLE_REFERENCES.len();
-                            }
-                            widgets::Label::new("[ / ] to Reference demo for a side-by-side eyeball compare").ui(ui);
-                        }
                         _ => {
-                            widgets::Label::new("(sliders apply to the Reference demo only)").ui(ui);
+                            widgets::Label::new("(sliders apply to the Reference/Apple reference demos only)").ui(ui);
                         }
                     }
                     ui.separator();
@@ -765,7 +772,7 @@ async fn main() {
                 s.interaction = forced_interaction;
             }
         }
-        if demo_scene == DemoScene::Reference {
+        if matches!(demo_scene, DemoScene::Reference | DemoScene::AppleReference) {
             apply_tuning(&mut scene, &params, dark);
         }
         scene.frame += 1;
