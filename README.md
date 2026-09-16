@@ -1,172 +1,1097 @@
-# Analogic Goose Presents: SPARK GLASS
+# LiquidGlass
 
-SparkGlass is a GPU visual-material proof of concept by Analogic Goose. It
-recreates Apple's Liquid Glass optical character in Rust and serves as the
-visual reference for a future windowless, embeddable renderer.
+**LiquidGlass** is a cross-platform GPU material engine written in Rust that recreates Apple's **Liquid Glass** visual language for native desktop applications.
 
-Copyright © 2026 Analogic Goose. Licensed under the MIT License; see
-[LICENSE](LICENSE).
+The project focuses on one thing above everything else:
 
-Proof of concept for Apple's **Liquid Glass** material (iOS 26), written in Rust with
-[macroquad](https://github.com/not-fl3/macroquad) y shaders GLSL.
+> **Visual fidelity is the product. Everything else is infrastructure.**
 
-El material replica el componente de Figma **"Liquid Glass - Regular - Large"**
-(and its **Dark** variant) layer by layer, using values read from the Figma file
-and calibrated against its render.
+LiquidGlass aims to provide high-quality glass refraction, blur, distortion, lighting, edge response, and backdrop interaction while remaining independent from any particular UI toolkit.
 
-## Run
+The long-term goal is a lightweight native library that can be embedded into applications on **Windows** and **Linux** through a stable C-compatible API.
 
-```sh
-cargo run --release
-```
+---
 
-Debug mode also works, but decoding the JPEGs in `assets/` is considerably slower.
+## Project Status
 
-## Controls
+LiquidGlass is currently transitioning from a working visual **proof of concept** into a production-oriented rendering library.
 
-| Input | Action |
-|---|---|
-| Drag with the mouse | Move a panel |
-| `P` | Cycle profiles (Clear → White tint → Black tint) |
-| `1` – `4` | Change the background |
-| `T` | White (Regular) / black (Dark) tint |
-| `↑` / `↓` | Select parameter |
-| `←` / `→` | Adjust selected parameter |
-| `H` | Hide/show parameter panel |
+The current implementation uses:
 
-## How it works
+- Rust
+- `macroquad`
+- Raw GLSL shaders
+- Signed-distance-field-style geometry
+- Multi-pass GPU rendering
+- Ping-pong framebuffers
 
-Each frame is rendered in three steps:
+The Macroquad implementation exists primarily as a **visual reference**.
 
-1. **Escena.** El fondo se dibuja (sin deformar, como `object-fit: cover`) en
-   un render target a resolución completa.
-2. **Frost.** La escena se reduce a media resolución y se desenfoca con un
-   Gaussiano separable de dos pasadas (`src/blur.frag`). Desenfocar a baja
-   resolución da un blur suave con cualquier radio y cuesta poco.
-3. **Paneles.** Cada panel es un quad con `src/glass.frag`, que lee la escena
-   nítida y la desenfocada y compone las dos capas del componente de Figma:
+It will remain available while the production renderer is developed so that visual parity can be continuously verified.
 
-   - **"Fill + Shadow"**: sombra proyectada, contorno fino en Linear Burn y el
-     tinte (blanco en Lighten + gris en Darken, o `#1A1A1A` en Luminosity +
-     Lighten para la variante Dark).
-   - **"Glass Effect"**: el efecto GLASS de Figma (refracción, profundidad,
-     dispersión, frost, luz y splay) y dos inner shadows en Linear Dodge que
-     iluminan los bordes superior e inferior.
+Macroquad is **not intended to be part of the final library architecture**.
 
-La forma es un rectángulo con esquinas continuas (corner smoothing de Figma)
-aproximadas con una superelipse. La refracción usa un perfil de bisel
-"squircle": la superficie sube hacia dentro a lo largo de `depth`, se refracta
-un rayo vertical con `refract()` y se desplaza el muestreo de la escena.
+---
 
-### Parámetros
+## Vision
 
-| Parámetro | Uniform | Figma |
-|---|---|---|
-| Refracción | `u_refraction` | Glass → Refraction |
-| Profundidad | `u_depth` | Glass → Depth |
-| Dispersión | `u_dispersion` | Glass → Dispersion |
-| Frost | `u_frost` | Glass → Frost |
-| Luz | `u_light_intensity` | Glass → Light intensity |
-| Ángulo luz | `u_light_angle` | Glass → Light angle |
-| Splay | `u_splay` | Glass → Splay |
-| Tinte | `u_tint` | Multiplicador de la opacidad de los rellenos (1 = Figma) |
-| Sombra | `u_shadow` | Multiplicador de la opacidad de la sombra (1 = Figma) |
+LiquidGlass is not intended to become a UI toolkit.
 
-### Perfiles
+It does not own:
 
-Los valores de cada parámetro se agrupan en perfiles (`PROFILES` en
-`src/main.rs`). Se arranca con **Clear** y se cambia con `P`; al cambiar de
-perfil se sobrescriben los ajustes hechos con las flechas.
+- application windows
+- controls
+- layouts
+- event loops
+- navigation
+- platform UI
+- swapchains
+- graphics contexts
 
-| Perfil | Refracción | Profundidad | Dispersión | Frost | Luz | Ángulo | Splay | Tinte | Sombra | Variante |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Clear | 2 | 30 | 0.2 | 6 | 0.25 | 0° | 0.2 | 0.15 | 1 | blanca |
-| Tinte blanco | 2 | 30 | 0.2 | 16 | 0.25 | 0° | 0.2 | 1 | 1 | blanca |
-| Tinte negro | 2 | 30 | 0.2 | 16 | 0.25 | 0° | 0.2 | 1 | 1 | oscura |
+Instead, the host application owns its native environment while LiquidGlass renders the visual material.
 
-Figma no documenta cómo traduce refracción, profundidad, dispersión, ángulo de
-luz y splay a píxeles, así que esa parte es una aproximación. El tinte, la
-sombra, el contorno y las franjas de luz de los bordes coinciden con su render
-(diferencia media < 1/255).
-
-## Arquitectura Liquid Glass
-
-La apariencia existente se conserva: los shaders y sus parámetros calibrados
-no se modificaron. Lo que cambió es el límite entre la UI y el renderizador.
-La UI describe superficies semánticamente y un `GlassScene` de ventana las
-compone en orden contra un único backdrop compartido:
+Conceptually:
 
 ```text
-UI → GlassScene → shared sharp backdrop → shared downsampled blur
-   → ping-pong glass stack → GlassSurface geometry/SDF
-   → refraction + frost + tint + edge light → foreground
+                   Host Application
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+           Windows                  Linux
+              │                       │
+           WinUI 3                  GTK 4
+              │                       │
+       SwapChainPanel             GtkGLArea
+              │                       │
+            ANGLE               OpenGL / GLES
+              │                       │
+              └───────────┬───────────┘
+                          │
+                   Active GL Context
+                          │
+                          ▼
+                    LiquidGlass
+                          │
+                     Rust Core
+                          │
+                    GPU Renderer
 ```
 
-Cada superficie lee el resultado acumulado de las superficies que están debajo
-y escribe en el otro render target del par. Antes de dibujarla, ese resultado
-acumulado se reduce y desenfoca en los targets reutilizables. Así un cristal
-inferior sigue visible, pero el frost del cristal superior vuelve a difundirlo,
-como el apilado de materiales de macOS, sin capturas ni lecturas desde CPU.
-Un segundo par de targets mantiene la cobertura del vidrio acumulado. Cuando
-una superficie superior encuentra vidrio debajo, reduce gradualmente la doble
-refracción, el doble frost, el tinte y la luz especular. Como esa máscara sigue
-el orden del stack, traer otra superficie al frente cambia automáticamente la
-calidad óptica de la intersección.
-La cobertura y las transiciones de inner shadow también se desenfocan con el
-frost de la superficie superior; por eso no quedan siluetas duras al usar frost
-alto.
+The native UI remains native.
 
-`GlassSurface` agrupa `GlassGeometry`, `GlassMaterial`, `GlassOptics`,
-`GlassLighting`, estilo e interacción. `GlassGroup` permite que controles
-relacionados compartan el mismo entorno de escena. Los estilos (`Thin`,
-`Regular`, `Prominent`, `Control`, `Navigation`) son la API que debe usar una
-UI de producto; no debe conocer uniforms ni shaders.
+LiquidGlass provides the material underneath or around those controls.
 
-`MacroquadGlassRenderer` es la implementación funcional actual. El límite
-`NativeGlassRenderer` define la integración posterior con un compositor WinUI
-(backdrop/composition brushes) y GTK4 (snapshot/shader o degradación nativa),
-sin transferir detalles de GPU al core de la aplicación. Las implementaciones
-concretas de WinUI y GTK4 requieren sus respectivos crates/proyectos host;
-este PoC no enlaza esos toolkits.
+---
 
-Calidad y accesibilidad se centralizan en `GlassQuality` y los flags de escena:
-en `Low` se elimina refracción y en `Fallback`/reduced transparency se elimina
-frost. `Q` recorre los niveles durante el desarrollo. `D` muestra límites y el
-estado de la escena para inspeccionar coordenadas y el backdrop compartido.
-Para capturas reproducibles del framebuffer, se puede definir
-`SPARK_GLASS_CAPTURE` con una ruta PNG antes de ejecutar el binario; la demo
-guarda el quinto frame y termina.
-`SPARK_GLASS_TEST_OVERLAP=1` coloca la cápsula detrás del panel grande para
-comprobar visualmente la composición y refracción glass-on-glass.
-`SPARK_GLASS_TEST_FROST` permite fijar el frost de esa captura (por ejemplo,
-`30`) para regresiones de blur e inner shadows.
-Para medir el binario release durante un número fijo de frames, define
-`SPARK_GLASS_BENCHMARK_FRAMES=180`. La salida incluye frame time/FPS y el
-tiempo de envío CPU del pipeline (`render_cpu_ms`). Se puede combinar con
-`SPARK_GLASS_TEST_OVERLAP=1` y `SPARK_GLASS_TEST_FROST=30`.
+# Core Goal
 
-## Estructura
+LiquidGlass should eventually compile into a standalone native library:
 
-```
-src/
-  main.rs      demo, entrada y HUD de diagnóstico
-  glass.rs     API semántica: escena, superficies, grupos, materiales y tokens
-  renderer.rs  límite de renderer, pipeline Macroquad y contratos WinUI/GTK4
-  glass.frag   material Liquid Glass (capas "Fill + Shadow" y "Glass Effect")
-  glass_mask.frag  cobertura acumulada para respuesta glass-on-glass
-  blur.frag    Gaussiano separable para el frost
-assets/        fondos de prueba
+```text
+Windows → .dll
+Linux   → .so
 ```
 
-## About / Créditos
+with a stable:
 
-**Analogic Goose Presents: SPARK GLASS**
+```c
+extern "C"
+```
 
-SparkGlass is an independent project by Analogic Goose. “Liquid Glass” is
-Apple's design/material terminology and is referenced here only to describe
-the visual target. SparkGlass is not affiliated with or endorsed by Apple.
+interface.
 
-- Punto de partida y fondos de prueba:
-  [archisvaze/liquid-glass](https://github.com/archisvaze/liquid-glass).
-- Valores del material: componente "Liquid Glass" del archivo de Figma del
-  equipo.
+This allows LiquidGlass to be used from Rust or other languages and frameworks without exposing Rust implementation details across the ABI boundary.
+
+---
+
+# Visual Fidelity Comes First
+
+Architectural cleanliness, portability, and performance are important.
+
+However, none of them justify visibly degrading the effect.
+
+If a change produces a cleaner architecture but makes the glass visibly worse, the architecture must be reconsidered.
+
+The current proof of concept should therefore act as a visual oracle during the migration.
+
+Important characteristics include:
+
+- backdrop-aware blur
+- refraction
+- lens distortion
+- SDF-driven glass geometry
+- smooth corner transitions
+- edge lighting
+- highlights
+- chromatic behavior where appropriate
+- physically convincing transparency
+- interaction with nearby visual content
+- smooth animation
+- high-DPI rendering
+- stable GPU performance
+
+LiquidGlass should never be reduced to:
+
+```text
+blur + transparency + rounded rectangle
+```
+
+That is not the objective of this project.
+
+---
+
+# Architectural Direction
+
+The current architectural direction is:
+
+```text
+Application / UI
+       │
+       ▼
+LiquidGlass C ABI
+       │
+       ▼
+Semantic Scene Model
+       │
+       ▼
+Render Planning
+       │
+       ▼
+OpenGL / GLES Renderer
+       │
+       ▼
+glow
+       │
+       ▼
+GPU
+```
+
+The first production renderer is expected to use **OpenGL / OpenGL ES through `glow`**.
+
+The public material model should not depend directly on OpenGL types.
+
+This keeps the architecture open to future backends without prematurely implementing a large generic graphics abstraction.
+
+---
+
+# Scene Model
+
+LiquidGlass is being designed as a **scene-aware material renderer**, rather than a collection of independent glass shaders.
+
+The conceptual model is moving toward:
+
+```text
+GlassScene
+│
+├── Backdrop
+│
+├── GlassContainer
+│   ├── GlassElement
+│   ├── GlassElement
+│   └── GlassElement
+│
+└── GlassContainer
+    ├── GlassElement
+    └── GlassElement
+```
+
+A `GlassElement` describes visual intent:
+
+```text
+position
+size
+shape
+corner geometry
+material
+transform
+opacity
+```
+
+A `GlassContainer` groups related glass surfaces.
+
+Grouping allows the renderer to potentially:
+
+- share backdrop sampling
+- reuse blur results
+- combine SDF geometry
+- optimize rendering passes
+- correctly handle nearby glass surfaces
+- support future morphing and interaction
+- reduce redundant GPU work
+
+The host describes **what should appear**.
+
+LiquidGlass decides **how it should be rendered**.
+
+---
+
+# Rendering Pipeline
+
+The current proof of concept uses a strict multi-pass rendering pipeline.
+
+Conceptually:
+
+```text
+Backdrop
+   │
+   ▼
+Geometry / SDF
+   │
+   ▼
+Mask Generation
+   │
+   ▼
+Blur / Filtering
+   │
+   ▼
+Refraction / Distortion
+   │
+   ▼
+Lighting / Edge Response
+   │
+   ▼
+Composite
+   │
+   ▼
+Host Render Target
+```
+
+Internally, multiple framebuffers may be used:
+
+```text
+Framebuffer A
+     ↕
+Framebuffer B
+```
+
+for ping-pong accumulation.
+
+The exact number of passes, shader programs, framebuffer operations, and intermediate resources are implementation details.
+
+Consumers of LiquidGlass should not need to understand them.
+
+---
+
+# Backdrop Rendering
+
+Glass requires information about what exists behind it.
+
+On platforms such as Apple's own UI frameworks, the system compositor already has this information.
+
+LiquidGlass does not own the Windows or Linux compositor, so the host application must provide the relevant backdrop.
+
+The preferred architecture is GPU-to-GPU:
+
+```text
+Host GPU Texture
+       │
+       ▼
+LiquidGlass
+       │
+       ▼
+GPU shader passes
+       │
+       ▼
+Glass output
+```
+
+Normal rendering should avoid:
+
+```text
+GPU
+ ↓
+CPU
+ ↓
+GPU
+```
+
+There should be **no CPU readback in the normal rendering path**.
+
+---
+
+# Texture Model
+
+External textures remain owned by the host.
+
+LiquidGlass may sample them but must not destroy them unless ownership has explicitly been transferred.
+
+The higher-level scene API should eventually operate on LiquidGlass resource handles rather than exposing raw graphics API handles everywhere.
+
+Conceptually:
+
+```text
+Native GL Texture
+       │
+       ▼
+Import
+       │
+       ▼
+LGTextureHandle
+       │
+       ▼
+GlassScene
+```
+
+This keeps the semantic API independent from the first graphics backend.
+
+Future resource import mechanisms could potentially support other graphics APIs without redesigning every material structure.
+
+---
+
+# OpenGL / GLES
+
+The current first-backend direction is:
+
+```text
+LiquidGlass
+    ↓
+  glow
+    ↓
+OpenGL / OpenGL ES
+```
+
+The current baseline target is approximately:
+
+```text
+OpenGL ES 3.0+
+```
+
+This provides a useful compatibility target for both Linux and ANGLE-based Windows rendering.
+
+The renderer should use newer capabilities when beneficial and available, but core visual behavior should not casually depend on platform-specific features.
+
+---
+
+# Windows
+
+The intended Windows architecture is:
+
+```text
+WinUI 3
+   │
+   ▼
+SwapChainPanel
+   │
+   ▼
+ANGLE / EGL
+   │
+   ▼
+OpenGL ES
+   │
+   ▼
+LiquidGlass
+   │
+   ▼
+Direct3D / Vulkan backend selected by ANGLE
+```
+
+LiquidGlass itself should not need to know that ANGLE exists.
+
+From LiquidGlass's perspective, it receives a valid OpenGL ES environment from the host.
+
+This isolates platform-specific DXGI, XAML, and ANGLE integration from the material renderer.
+
+---
+
+# Linux
+
+The intended Linux architecture is:
+
+```text
+GTK 4
+   │
+   ▼
+GtkGLArea
+   │
+   ▼
+Host OpenGL Context
+   │
+   ▼
+LiquidGlass
+```
+
+GTK remains responsible for:
+
+- the application window
+- widgets
+- events
+- layout
+- presentation
+- native composition
+
+LiquidGlass only performs the glass rendering while the required graphics context is active.
+
+---
+
+# Vulkan
+
+Vulkan is strategically interesting, but it is **not the immediate implementation target**.
+
+The intended philosophy is:
+
+> LiquidGlass is a GPU material engine whose first production backend happens to be OpenGL / GLES.
+
+The internal material and scene models should therefore avoid unnecessary dependency on `glow` or OpenGL-specific types.
+
+However, the project should also avoid premature abstraction.
+
+We are not building a large Vulkan/Metal/OpenGL backend interface before a second real backend exists.
+
+The expected progression is:
+
+```text
+Today
+
+LiquidGlass
+    ↓
+GL/GLES renderer
+    ↓
+glow
+
+
+Possible Future
+
+LiquidGlass
+     │
+ ┌───┴────┐
+ ▼        ▼
+GLES    Vulkan
+ │        │
+glow     ash
+```
+
+On Windows, ANGLE may also provide Vulkan underneath the GLES interface without requiring LiquidGlass itself to maintain a native Vulkan renderer.
+
+---
+
+# Graphics Context Ownership
+
+The **host application owns the graphics context**.
+
+LiquidGlass should not normally create:
+
+```text
+window
+GL context
+EGL context
+swapchain
+event loop
+presentation loop
+```
+
+The expected lifecycle is conceptually:
+
+```text
+Host creates graphics environment
+          │
+          ▼
+Host makes context current
+          │
+          ▼
+LiquidGlass initializes GPU resources
+          │
+          ▼
+Host render callback
+          │
+          ▼
+LiquidGlass renders
+          │
+          ▼
+Host presents
+```
+
+This model maps naturally to both GTK and ANGLE.
+
+---
+
+# Threading
+
+OpenGL contexts are thread-affine.
+
+LiquidGlass rendering should therefore execute synchronously on the host thread where the appropriate graphics context is current.
+
+The default architecture should **not** create an internal rendering thread.
+
+Avoid:
+
+```text
+Host UI Thread
+      │
+      ▼
+LiquidGlass queue
+      │
+      ▼
+Internal Render Thread
+      │
+      ▼
+GL Context
+```
+
+unless a future backend explicitly requires and benefits from such a design.
+
+CPU-side preparation may eventually become asynchronous.
+
+Actual GPU commands must obey graphics-context ownership rules.
+
+---
+
+# Native C ABI
+
+The production library will expose an opaque C-compatible API.
+
+Conceptually:
+
+```c
+typedef struct LiquidGlassContext LiquidGlassContext;
+```
+
+The implementation remains private in Rust.
+
+The C boundary must not expose:
+
+- Rust references
+- Rust traits
+- Rust generics
+- `Vec<T>`
+- slices
+- `String`
+- `dyn Trait`
+- Rust enum layout assumptions
+- implementation-specific renderer objects
+
+FFI-facing structures should use deliberately defined C-compatible layouts.
+
+---
+
+# Frame Submission
+
+The preferred rendering model is **batched frame submission**.
+
+Preferred:
+
+```c
+lg_render_frame(context, &frame);
+```
+
+rather than:
+
+```c
+lg_draw_glass(context, &element1);
+lg_draw_glass(context, &element2);
+lg_draw_glass(context, &element3);
+```
+
+Giving LiquidGlass the full frame allows the renderer to optimize globally.
+
+For example:
+
+```text
+Glass A ─┐
+Glass B ─┼─ shared backdrop / blur work
+Glass C ─┘
+```
+
+instead of independently recomputing the same effects.
+
+---
+
+# Coordinates and DPI
+
+The host UI toolkit may work in logical coordinates while the GPU renders in physical pixels.
+
+For example:
+
+```text
+Logical UI
+800 × 600
+
+Scale
+2.0
+
+Framebuffer
+1600 × 1200
+```
+
+LiquidGlass should receive enough information to convert between those spaces without becoming coupled to GTK or WinUI's DPI systems.
+
+The exact ABI representation is still being designed.
+
+---
+
+# Alpha Composition
+
+LiquidGlass must coexist with native UI controls rendered by the host toolkit.
+
+Conceptually:
+
+```text
+┌─────────────────────────────────┐
+│ Native controls                 │
+│                                 │
+│      [ Play ] [ Search ]        │
+│                                 │
+│ ───── LiquidGlass surface ───── │
+│                                 │
+└─────────────────────────────────┘
+```
+
+Hardware composition and alpha behavior are therefore first-class architectural concerns.
+
+The production implementation must use a clearly documented alpha contract.
+
+---
+
+# Repository Structure
+
+The current migration direction is to keep the project in a **single repository**.
+
+A possible structure is:
+
+```text
+LiquidGlass/
+│
+├── README.md
+│
+├── Cargo.toml
+│
+├── docs/
+│   └── LiquidGlass_MASTER_ARCHITECTURE.md
+│
+├── crates/
+│   ├── liquidglass-core/
+│   ├── liquidglass-gl/
+│   └── liquidglass-ffi/
+│
+├── examples/
+│   └── sandbox/
+│
+├── reference/
+│   └── macroquad-poc/
+│
+└── shaders/
+    ├── glass.frag
+    ├── glass_mask.frag
+    └── blur.frag
+```
+
+This layout is provisional.
+
+The repository should only be split into additional crates when the separation provides a practical architectural benefit.
+
+---
+
+# Reference Implementation
+
+The Macroquad PoC should remain available during the migration.
+
+It serves as the visual comparison target.
+
+Recommended development flow:
+
+```text
+Macroquad PoC
+      │
+      │ visual reference
+      ▼
+New GL Renderer
+      │
+      ▼
+Side-by-Side Comparison
+      │
+      ▼
+Visual Parity
+      │
+      ▼
+PoC becomes reference-only
+```
+
+Do not delete the reference implementation simply because the new renderer compiles.
+
+The new renderer must first prove that it preserves or improves the visual result.
+
+---
+
+# Local Sandbox
+
+The production library should remain windowless.
+
+Development still needs a convenient environment for testing.
+
+The local sandbox is expected to use something similar to:
+
+```text
+winit
+  +
+glutin
+  +
+LiquidGlass
+```
+
+This executable can test:
+
+- shaders
+- resizing
+- textures
+- framebuffer behavior
+- materials
+- SDF geometry
+- DPI scaling
+- animations
+- GPU performance
+- visual regressions
+
+without requiring a full GTK or WinUI application.
+
+---
+
+# Performance Principles
+
+LiquidGlass should prefer:
+
+- GPU-resident resources
+- batched rendering
+- reused intermediate textures
+- persistent GPU resources
+- minimal allocation during rendering
+- reduced redundant blur passes
+- shared container processing
+- texture reuse
+- minimal driver synchronization
+
+LiquidGlass should avoid:
+
+- CPU readback
+- per-frame JSON parsing
+- unnecessary GPU resource recreation
+- uploading unchanged textures every frame
+- one complete blur pipeline per control
+- unnecessary `glGet*` state queries
+- blocking synchronization where avoidable
+
+---
+
+# Non-Goals
+
+LiquidGlass is not intended to become:
+
+- a full UI toolkit
+- a window manager
+- a layout engine
+- an event system
+- a game engine
+- a GTK wrapper
+- a WinUI wrapper
+- an ANGLE wrapper
+- a general-purpose graphics engine
+- a clone of Apple's private implementation
+
+The goal is narrower:
+
+> Provide an exceptional Liquid Glass-style material renderer that native applications can embed.
+
+---
+
+# Design Philosophy
+
+### 1. Visual quality first
+
+If an optimization significantly harms the material, it is not an acceptable optimization.
+
+### 2. Describe intent, not GPU commands
+
+Applications should describe glass elements and materials.
+
+They should not manually orchestrate LiquidGlass's internal render passes.
+
+### 3. Keep platform ownership outside the renderer
+
+GTK, WinUI, ANGLE, EGL, windows, and event loops belong to the host.
+
+### 4. Keep rendering GPU-resident
+
+Avoid CPU round-trips in the normal pipeline.
+
+### 5. Preserve future flexibility without speculative engineering
+
+Do not allow GL implementation details to unnecessarily infect the entire architecture.
+
+Also do not build unused Vulkan/Metal abstractions merely because they may someday exist.
+
+### 6. Measure before optimizing
+
+Render-state restoration, framebuffer strategies, blur implementations, batching behavior, and backend choices must eventually be benchmarked on real hardware.
+
+### 7. The current effect is evidence
+
+The existing PoC already demonstrates the desired visual direction.
+
+Migration must preserve what works rather than restarting from assumptions.
+
+---
+
+# Current Architectural Decisions
+
+| Area | Direction |
+|---|---|
+| Language | Rust |
+| Production graphics API | OpenGL / GLES first |
+| GL wrapper | `glow` |
+| Approximate baseline | GLES 3.0+ |
+| Window ownership | Host |
+| GL context ownership | Host |
+| UI ownership | Host |
+| Render thread | Host graphics thread |
+| Production event loop | None |
+| ABI | `extern "C"` |
+| Context exposure | Opaque handle |
+| Per-frame description | C-compatible structures |
+| Submission | Batched |
+| Normal CPU readbacks | None |
+| External textures | GPU-first |
+| Windows | WinUI 3 + ANGLE |
+| Linux | GTK 4 + GtkGLArea |
+| Sandbox | `winit` + `glutin` |
+| Macroquad | Visual reference only |
+| Vulkan | Possible future native backend |
+| Native controls | Host-rendered |
+
+---
+
+# Still Open
+
+Several architectural questions remain intentionally unresolved.
+
+These should be discussed and tested before being frozen.
+
+### Render Target Contract
+
+Should LiquidGlass:
+
+- render into the currently bound framebuffer;
+- accept a host-provided framebuffer;
+- create its own output texture;
+- support multiple target modes?
+
+### OpenGL State Isolation
+
+Should LiquidGlass:
+
+- preserve all relevant GL state;
+- preserve a documented subset;
+- provide safe/fast modes;
+- require the host adapter to restore state?
+
+This must be decided using real performance measurements.
+
+### Backdrop Scope
+
+Should a scene have:
+
+```text
+one global backdrop
+```
+
+or should different containers be able to reference different backdrops?
+
+### Resource Lifecycle
+
+The library must define behavior when:
+
+- GL contexts are recreated;
+- windows resize;
+- framebuffer dimensions change;
+- a device becomes invalid;
+- external textures disappear;
+- GtkGLArea is unrealized/recreated;
+- ANGLE recreates surfaces.
+
+### Material Model
+
+The exact split between:
+
+```text
+per-scene
+per-container
+per-material
+per-element
+```
+
+parameters remains open.
+
+---
+
+# Development Roadmap
+
+## Phase 0 — Preserve the Reference
+
+Freeze/tag the current visual PoC.
+
+Example:
+
+```text
+v0.1-poc-reference
+```
+
+---
+
+## Phase 1 — Semantic Model
+
+Define:
+
+```text
+Scene
+Backdrop
+Container
+GlassElement
+Material
+TextureHandle
+RenderTarget
+```
+
+without immediately writing the complete FFI.
+
+---
+
+## Phase 2 — C ABI
+
+Define:
+
+- handles
+- ownership
+- lifetime rules
+- error model
+- versioning
+- frame structures
+- resource APIs
+- thread requirements
+
+---
+
+## Phase 3 — GL Renderer
+
+Replace Macroquad's rendering responsibilities with:
+
+```text
+glow
+```
+
+while reproducing the existing visual pipeline.
+
+---
+
+## Phase 4 — Standalone Sandbox
+
+Build:
+
+```text
+winit + glutin + LiquidGlass
+```
+
+and establish visual parity with the PoC.
+
+---
+
+## Phase 5 — Linux Integration
+
+Validate:
+
+```text
+GTK 4 + GtkGLArea + LiquidGlass
+```
+
+---
+
+## Phase 6 — Windows Integration
+
+Validate:
+
+```text
+WinUI 3 + ANGLE + LiquidGlass
+```
+
+---
+
+## Phase 7 — Real Application Validation
+
+The first major real-world consumer is expected to be **GoosicReborn**.
+
+The architecture succeeds if GoosicReborn can use essentially the same LiquidGlass material API on both platforms while only its platform integration layer changes.
+
+---
+
+## Phase 8 — Advanced Fidelity
+
+Investigate:
+
+- shared SDF fields
+- optimized backdrop regions
+- better lens simulation
+- dynamic luminance adaptation
+- highlight behavior
+- chromatic dispersion
+- material interaction
+- morphing
+- animation
+- shared blur caches
+- advanced GPU reduction/compute techniques
+
+---
+
+## Phase 9 — Future Backends
+
+Only after the semantic architecture proves itself should a native second graphics backend be seriously evaluated.
+
+Potential example:
+
+```text
+Vulkan
+```
+
+The existence of that future possibility should influence clean boundaries today, but it should **not dominate the implementation today**.
+
+---
+
+# AI / Contributor Guidance
+
+When working on LiquidGlass:
+
+## DO
+
+- preserve visual fidelity
+- preserve the PoC until parity exists
+- reason about GPU ownership carefully
+- keep render passes internal
+- keep UI ownership in the host
+- maintain zero normal CPU readback
+- consider batching and backdrop reuse
+- distinguish semantic API from graphics backend
+- benchmark architectural performance decisions
+- document ownership and lifetime explicitly
+- keep platform-specific integration isolated
+
+## DO NOT
+
+- replace the material with simple blur
+- delete working visual behavior because a cleaner abstraction is easier
+- introduce CPU screenshots into the normal render path
+- make LiquidGlass a UI toolkit
+- expose Rust-specific types through C
+- make GTK/WinUI knowledge part of the material core
+- make the public scene model depend directly on `glow`
+- prematurely rewrite the project around Vulkan
+- design dozens of speculative backend traits
+- rebuild GPU resources every frame unnecessarily
+- expose ping-pong passes to applications
+- assume compilation equals visual success
+
+---
+
+# The Rule
+
+When there is uncertainty, return to this:
+
+> **LiquidGlass exists to render exceptional glass.**
+
+The architecture, ABI, backend, platform integrations, optimizations, and resource systems exist to make that possible.
+
+**Visual fidelity is the product. Everything else is infrastructure.**
