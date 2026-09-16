@@ -461,22 +461,35 @@ that next.
 
 Prompted by a direct comparison against
 `docs/references/apple-liquid-glass/`: real Liquid Glass visibly picks up
-color from whatever's just outside its edge (album art next to the glass,
-for instance), not just a fixed light/dark rim — the one input the
-original Phase 8.5 pass above didn't touch. Added
-`GlassMaterial.ambient_reflection` (`0.0` in every `preset()`, a no-op) and
-changed `glass.frag`'s inner-glow rim term to sample `u_scene_blur` pushed
-outward along the pixel's own surface normal (`n2`, already computed for
-the refraction/lighting terms above it — no new geometry), scaled down to
-roughly the fixed constants' own magnitude (~0.1-0.16) so the blend between
-"fixed rim" and "colored by whatever's nearby" is smooth rather than
-suddenly overpowering the existing look.
+color from whatever's just outside its edge on any side (album art next
+to the glass, not only above/below it), not just a fixed light/dark rim —
+the one input the original Phase 8.5 pass above didn't touch. Added
+`GlassMaterial.ambient_reflection` (`0.0` in every `preset()`, a no-op).
+
+**First attempt (superseded):** mixed a small sampled tint into
+`glow_top`/`glow_bottom` — Figma's own top/bottom-only inner shadows.
+Wrong on two counts, both surfaced when the team actually tested it side
+by side with `docs/references/apple-liquid-glass/apple_music_home_sidebar_crop.jpg`:
+the effect only ever reached the top/bottom edges (never the sides, where
+a panel is often positioned next to the most colorful part of a backdrop),
+and the magnitude (blended into a rim term whose own fixed constants are
+only ~0.1-0.16) was too subtle to see once any real refraction/tint was
+also active.
+
+**Current version:** a dedicated, fully omnidirectional rim band (same
+`dist`-from-edge shape the Phase 9.5 interaction glow uses, not tied to
+Figma's top/bottom-specific geometry), mixing a real fraction
+(`ambient_band * u_ambient_reflection * 0.6` at full strength) of the
+sampled `u_scene_blur` color directly into the rim, strong enough to
+visibly matter rather than guessed at.
 
 **Verified:** goldens still 0.0000%-0.0002% RMSE (inert at `0.0`).
-`examples/parameter_sweep.rs` gained an `ambient_reflection` sweep;
-`0` → `1` measured ~0.17% RMSE, and a cropped comparison of the panel's top
-edge (against blue sky in `assets/image1.jpg`) visibly shifts from the
-fixed warm rim color toward blue at `1.0` — small but real, same
+`examples/parameter_sweep.rs`'s `ambient_reflection` sweep: `0` → `1` now
+measures ~2.5% RMSE (up from the first attempt's ~0.17%), and cropped
+left/right edge comparisons show a clearly visible blue rim (against sky)
+on the left and orange/yellow (against flowers) on the right — confirmed
+omnidirectional, not just top/bottom, by actually looking at both edges
+separately rather than a single overall diff number. Same
 "infrastructure done, default is a human decision" status as the rest of
 8.5.
 

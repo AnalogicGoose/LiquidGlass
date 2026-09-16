@@ -293,18 +293,25 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     float glow_top = 1.0 - blurred_coverage(sd_shape(p - glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     float glow_bottom = 1.0 - blurred_coverage(sd_shape(p + glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     vec3 rim_color = mix(LIGHT_EDGE_GLOW_COLOR, DARK_EDGE_GLOW_COLOR, u_tint_mode);
-    // Phase 8.5's "backdrop color characteristics" input: real Liquid Glass
-    // visibly picks up color from whatever's just outside its edge (an
-    // album cover next to the glass, say), not just a fixed light/dark
-    // rim. Sample the already-frosted backdrop pushed outward along this
-    // pixel's own surface normal `n2` (computed above, points outward —
-    // same convention the specular lighting already uses) and scale it
-    // down to roughly the fixed constants' own magnitude (~0.1-0.16) so
-    // `u_ambient_reflection` blends smoothly between "fixed rim" and
-    // "colored by whatever's nearby" instead of suddenly overpowering it.
-    vec3 ambient = texture2D(u_scene_blur, screen_uv(v_px + n2 * bezel * 1.5)).rgb * 0.18;
-    rim_color = mix(rim_color, ambient, u_ambient_reflection);
     col += rim_color * (glow_top + glow_bottom) * (1.0 + 0.25 * local_busyness);
+
+    // Phase 8.5's "backdrop color characteristics" input: real Liquid
+    // Glass visibly picks up color from whatever's just outside its edge
+    // on ANY side (an album cover to the left or right of the glass, not
+    // only above/below it) — unlike glow_top/glow_bottom just above,
+    // which are Figma's own top/bottom-only inner shadows and stay that
+    // way deliberately, this is a genuinely omnidirectional rim band
+    // (same `dist`-from-edge shape the interaction glow below uses).
+    // First attempt at this mixed a *tiny* sampled tint into
+    // glow_top/glow_bottom's own already-small magnitude and was
+    // basically invisible in practice — this instead directly mixes a
+    // real fraction of the sampled color into the rim, strong enough at
+    // `u_ambient_reflection = 1` to actually see color pulled from
+    // whatever's adjacent to the glass, not just guessed to be strong
+    // enough.
+    float ambient_band = 1.0 - smoothstep(0.0, bezel * 0.45, dist);
+    vec3 ambient_color = texture2D(u_scene_blur, screen_uv(v_px + n2 * bezel * 1.2)).rgb;
+    col = mix(col, ambient_color, ambient_band * u_ambient_reflection * 0.6);
 
     // Phase 9.5 — Interaction Illumination: a soft, omnidirectional edge
     // glow while a surface is hovered/pressed/dragged/selected
