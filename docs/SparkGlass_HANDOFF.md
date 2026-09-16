@@ -172,9 +172,16 @@ not improvising an answer solo.
    three windowed backends. Safe to pick up from any angle below.
    `scripts/visual_regression.sh` and `scripts/verify_backends.sh` both
    pass; run them after any shader or renderer change before trusting it.
-   The Windows CI workflow's `c-abi-smoke` job was still finishing its
-   first real pass (after fixing a missing `d3dcompiler_47.dll`) when this
-   was written — check its latest run before assuming it's green.
+   The Windows CI workflow's `c-abi-smoke` job is still red as of this
+   writing — `c_smoke.exe` crashes with the same exit code
+   (`-1073741515` / `STATUS_DLL_NOT_FOUND`) both before and after copying
+   `d3dcompiler_47.dll` next to it, so that wasn't the (whole) answer.
+   `native-build-and-test` (the other job) is green. Next step, not yet
+   done: `dumpbin /dependents` was only ever run on `c_smoke.exe` and
+   `spark_glass.dll` — never on `libEGL.dll`/`libGLESv2.dll` themselves,
+   which is where ANGLE's own missing transitive dependency would
+   actually show up. Check those two directly before guessing at another
+   DLL to copy.
 2. **`docs/SparkGlass_ROADMAP.md`'s Phase 8 (Apple Material Fidelity) is
    now fully addressed** — see `SparkGlass_IMPLEMENTATION_STATUS.md`'s
    Phase 8.1–8.9 sections for the detail per sub-phase. Short version: 8.1
