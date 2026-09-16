@@ -12,7 +12,7 @@
 | 3 | `glow` GL renderer | Done — `src/backend/gl/` |
 | 4 | Standalone windowless-core sandbox + visual regression framework | Done — `examples/sandbox.rs`, `examples/visual_regression.rs` + `scripts/visual_regression.sh` |
 | 5 | Linux (GTK4) integration | Done — `examples/gtk_glarea.rs`, `examples/gtk_glarea_overlay.rs` |
-| 6 | Windows (WinUI 3 + ANGLE) integration | **Started, partially verified** — see below. No Windows dev machine here; using GitHub Actions windows-latest runners as the actual verification |
+| 6 | Windows (WinUI 3 + ANGLE) integration | **Paused, deliberately** — Linux-only focus for now per explicit team decision. GitHub Actions CI was removed; see below for what it did prove before being scrapped |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
 | 9 | Container interaction + motion | **Started** — 9.1 (Containers) and 9.5 (Interaction Illumination, surface-level) done; 9.2–9.4 not started, see below |
@@ -267,40 +267,43 @@ Wayland is what this was validated on).
 
 ---
 
-## Phase 6 — Windows (WinUI 3 + ANGLE) integration (started, partially verified)
+## Phase 6 — Windows (WinUI 3 + ANGLE) integration (paused, deliberately)
 
-No Windows dev machine exists in this project's environment. Per the
-roadmap's own rule ("don't assume compilation equals visual success"),
-that means Phase 6 can't be marked done from here — but GitHub Actions'
-`windows-latest` runners are real Windows, and `.github/workflows/windows.yml`
-uses them as the actual verification step instead of guessing.
+**The team made an explicit call to stop here and focus on Linux only for
+now** — the GitHub Actions Windows CI (`.github/workflows/windows.yml`)
+was removed. This section records what it proved before being scrapped,
+so the effort isn't lost if Phase 6 picks back up later; it does not mean
+any of this was wrong or wasted, just that priorities shifted.
 
-**Verified locally (Linux, mingw cross-compile):**
+**Verified locally (Linux, mingw cross-compile) — still true, no CI needed:**
 `cargo build --release --lib --target x86_64-pc-windows-gnu` (after
 installing `rust-std-static-x86_64-pc-windows-gnu` + `mingw64-gcc` via
 `dnf`) produces a real PE32+ DLL. `x86_64-w64-mingw32-objdump -p` on it
 confirms all 9 `sg_*` C ABI functions are present in the export table.
 This is a cross-build, not the real MSVC target, so it only proves the
-crate's dependency graph and FFI surface are Windows-portable at all — see
-below for what actually runs on Windows.
+crate's dependency graph and FFI surface are Windows-portable at all —
+this much can be re-checked any time without needing CI or a Windows
+machine at all.
 
-**Verified on real Windows (GitHub Actions `windows-latest`):**
-`.github/workflows/windows.yml` has two jobs:
-- `native-build-and-test`: builds `x86_64-pc-windows-msvc` natively (the
-  real target triple), runs `cargo test --lib` there, and re-confirms the
-  export table via `dumpbin /exports`. Check the workflow's latest run for
-  current status — first attempt failed at `cargo test --lib` because
-  `gtk4` (a dev-dependency needed only by the Linux-only
-  `examples/gtk_glarea*.rs`) doesn't build without pkg-config/system GTK
-  headers, which don't exist on that runner; fixed by scoping `gtk4` to
-  `[target.'cfg(target_os = "linux")'.dev-dependencies]` in `Cargo.toml`,
-  since it was never going to be needed on Windows anyway.
-- `c-abi-smoke`: builds `c_smoke/main.c` (the same file
-  `scripts/verify_backends.sh` already proves byte-identical on Linux)
-  with MSVC, linked against Google ANGLE's EGL/GLESv2 via vcpkg, and runs
-  it. This is the first time SparkGlass-rendered pixels have gone through
-  ANGLE on any platform — check the workflow's latest run for whether it
-  passed; the vcpkg ANGLE build is built from source and takes a while.
+**Was verified on real Windows, while the CI existed (GitHub Actions
+`windows-latest`):** two jobs, `native-build-and-test` (native
+`x86_64-pc-windows-msvc` build, `cargo test --lib`, `dumpbin /exports`
+re-confirming the C ABI export table — this one was fully green) and
+`c-abi-smoke` (`c_smoke/main.c` built with MSVC, linked against Google
+ANGLE's EGL/GLESv2 via vcpkg — the first time SparkGlass-rendered pixels
+ever went through ANGLE on any platform). `c-abi-smoke` was never gotten
+to pass before the workflow was removed: `c_smoke.exe` consistently
+crashed with `STATUS_DLL_NOT_FOUND` (`-1073741515`), and copying the
+`d3dcompiler_47.dll` ANGLE's D3D11 backend needs at runtime didn't fully
+fix it — the actual next diagnostic step (`dumpbin /dependents` on
+`libEGL.dll`/`libGLESv2.dll` themselves, never done) is recorded in
+`docs/SparkGlass_HANDOFF.md` in case this picks back up. Two real,
+now-fixed bugs were found along the way regardless of that unresolved
+crash: `gtk4` (a dev-dependency only `examples/gtk_glarea*.rs` needs)
+didn't build without Linux's pkg-config/GTK headers — fixed by scoping it
+to `[target.'cfg(target_os = "linux")'.dev-dependencies]` in `Cargo.toml`,
+which is a real, permanent improvement independent of Windows CI existing
+at all.
 
 **Not done, deliberately unverified:** `platform/windows/` has a WinUI 3 +
 `SwapChainPanel` + ANGLE host scaffold (`SparkGlassPanel.h`/`.cpp`) sketching

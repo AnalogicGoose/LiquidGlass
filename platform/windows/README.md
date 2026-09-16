@@ -1,35 +1,41 @@
 # SparkGlass on Windows — WinUI 3 + ANGLE host scaffold
 
-**Status: unverified scaffold, not a working integration.** Nobody has
-built or run this against real Windows. Per `AGENTS.md`'s "verify, don't
-assume" rule, don't upgrade this file's status to "done" — or reuse the
-code below as if it were proven — without actually building it on Windows
-first and updating `docs/SparkGlass_IMPLEMENTATION_STATUS.md`.
+**Status: unverified scaffold, not a working integration, and Phase 6 is
+currently paused.** The team made an explicit call to focus on Linux only
+for now — the GitHub Actions Windows CI that used to back this section
+(`.github/workflows/windows.yml`) has been removed. Nobody has built or
+run this scaffold against real Windows either. Per `AGENTS.md`'s "verify,
+don't assume" rule, don't upgrade this file's status to "done" — or reuse
+the code below as if it were proven — without actually building it on
+Windows first and updating `docs/SparkGlass_IMPLEMENTATION_STATUS.md`.
 
-## What's actually verified about Windows so far
+## What was verified about Windows before Phase 6 was paused
 
-Everything that *can* be verified without a Windows machine has been —
-see `docs/SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 6 section for the
-full detail:
+See `docs/SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 6 section for the
+full detail and current status:
 
 - The Rust `cdylib` cross-compiles clean to `x86_64-pc-windows-gnu`
   (mingw) and produces a real PE32+ DLL exporting all 9 `sg_*` C ABI
-  functions (`x86_64-w64-mingw32-objdump -p`, checked locally).
-- `.github/workflows/windows.yml` builds natively on a real
-  `windows-latest` GitHub Actions runner (MSVC target, not a cross-build),
-  runs the crate's unit tests there, and — the actual novel step — builds
-  `c_smoke/main.c` with MSVC, links it against Google ANGLE's EGL/GLESv2
-  (via vcpkg), and runs it. That's the first time SparkGlass-rendered
-  pixels have gone through ANGLE on any platform. Check that workflow's
-  latest run for current status.
+  functions (`x86_64-w64-mingw32-objdump -p`, checked locally). This one
+  doesn't need CI or a Windows machine and can be re-checked any time.
+- While the now-removed CI existed, `native-build-and-test` (native MSVC
+  build + unit tests + C ABI export check) passed cleanly on a real
+  `windows-latest` runner. `c-abi-smoke` (linking `c_smoke.c` against
+  Google ANGLE via vcpkg — the first time SparkGlass-rendered pixels ever
+  went through ANGLE on any platform) never got past a
+  `STATUS_DLL_NOT_FOUND` crash before the workflow was scrapped — see
+  `docs/SparkGlass_HANDOFF.md` for the unresolved diagnostic thread if
+  Phase 6 picks back up.
 
-What that proves: the C ABI and the GL rendering pipeline behind it are
-sound on Windows, through the same EGL/GLES surface ANGLE presents
-everywhere else. What it does **not** prove: that a real WinUI 3 app can
-actually host that inside a `SwapChainPanel`, survive XAML's threading
-model, or look right composited with native XAML controls. That needs an
-actual Windows dev machine with Visual Studio and the Windows App SDK —
-none of which exist in this project's environment.
+What the passing parts proved: the C ABI and Rust dependency graph are
+sound on Windows. What was never reached: proof that the GL rendering
+pipeline runs correctly through ANGLE on Windows, let alone that a real
+WinUI 3 app can host it inside a `SwapChainPanel`, survive XAML's
+threading model, or look right composited with native XAML controls. That
+needs an actual Windows dev machine with Visual Studio and the Windows App
+SDK — none of which exist in this project's environment, which is
+ultimately why the team decided to pause here rather than keep debugging
+CI blind.
 
 ## The intended architecture
 
