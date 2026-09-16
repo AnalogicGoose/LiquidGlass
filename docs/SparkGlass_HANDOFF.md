@@ -16,11 +16,15 @@ Short version: Phases 0–5 from `docs/SparkGlass_MASTER_ARCHITECTURE.md` §54
 are implemented and independently verified (not just "compiles"). Four
 separate host integrations — a `winit`+`glutin` sandbox, the `extern "C"`
 ABI called from Rust, a real GTK4 `GtkGLArea` widget, and a plain C program
-linked against the compiled `.so` — render byte-identical output. Phase 6
+linked against the compiled `.so` — render byte-identical output. Phase 8
+(Apple Material Fidelity, `docs/SparkGlass_ROADMAP.md`) is also fully
+addressed now — see that doc's Phase 8.1–8.9 sections. Phase 6
 (Windows/WinUI/ANGLE) has not been started because there is no Windows
 environment available here to build or verify it against — don't write
 unverified Windows integration code; it would violate the project's own
-"don't assume compilation equals visual success" rule.
+"don't assume compilation equals visual success" rule. Phase 7 (GoosicReborn
+integration) and Phase 9 (container/motion, blocked on `GlassGroup` being
+dead data) are the two open candidates for whatever comes next.
 
 ## Things that will trip you up if you don't know them
 
@@ -142,32 +146,27 @@ not improvising an answer solo.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`e1af80b` as of this
+1. **Nothing is currently broken** — the last commit (`ad221b6` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`, including all
-   three windowed backends (the transient compositor hang in item 5 above
-   cleared on its own later in the session). Safe to pick up from any angle
-   below. If windowed examples start hanging again for no code-side reason,
-   see item 5's update for what to check before assuming something broke.
-   `scripts/visual_regression.sh`'s headless checks remain reliable
-   regardless.
-2. **`docs/SparkGlass_ROADMAP.md` is now the authoritative phase plan from
-   Phase 8 onward** — it supersedes the master doc's old Phase 8 section
-   (which now says so explicitly). Phase 8.1 (Material Style System) is
-   started: `preset()` in `src/glass.rs` now gives `Control`/`Thin` styles
-   different frost/tint than `Regular`/`Navigation`, and every example
-   applies each surface's *own* style instead of one profile stamped on
-   everything. The rest of Phase 8.1's "tune per style" list (transmission,
-   highlight strength, edge response, chromatic behavior, shadow) is
-   untouched — those still don't vary by style, and there's no reference
-   evidence yet for what they should be per-style specifically. Phase 8.2
-   (Optical Calibration) — the Refraction/Opacity mystery from
-   `docs/references/figma-liquid-glass/README.md` — has its tooling built
-   now too: `cargo run --example parameter_sweep` renders both parameters
-   across a range of candidate values for side-by-side comparison against
-   the Figma reference. Nobody's actually run that comparison and picked
-   values yet — that's deliberately a human step (the roadmap says so
-   explicitly), so it's still open.
+   three windowed backends. Safe to pick up from any angle below.
+   `scripts/visual_regression.sh` and `scripts/verify_backends.sh` both
+   pass; run them after any shader or renderer change before trusting it.
+2. **`docs/SparkGlass_ROADMAP.md`'s Phase 8 (Apple Material Fidelity) is
+   now fully addressed** — see `SparkGlass_IMPLEMENTATION_STATUS.md`'s
+   Phase 8.1–8.9 sections for the detail per sub-phase. Short version: 8.1
+   (per-style material bucketing) and 8.2 (optical calibration) were done
+   earlier and confirmed correct by the team directly, via `cargo run`'s
+   interactive config mode (`P`/arrows/`S`/`R` — see `src/main.rs`) rather
+   than only the static sweep tool. 8.3/8.4/8.6/8.7/8.9 turned out to
+   already be satisfied by the existing shader architecture (documented,
+   no code change). 8.5 (Adaptive Material Response) and 8.8 (Clear
+   Material Dimming) are new: `GlassMaterial.adaptive_response` and
+   `.clear_dimming`, both `0.0` (a proven no-op — see the goldens) in
+   every shipped preset, with real effects once turned on
+   (`examples/parameter_sweep.rs` has sweeps for both). **Picking a
+   non-zero default for either is an open human decision, same as 8.2's
+   values were** — don't guess at one; ask.
 3. **Figma reference material exists** at `docs/references/`: the actual
    file the shader constants were almost certainly calibrated against
    (same source photo as `assets/image1.jpg`, components named/sized to
@@ -185,11 +184,13 @@ not improvising an answer solo.
    returns locally-overridden values, never the full inherited set.
 4. **Phase 1 (freeze semantics) audit — 2 rounds done, not finished.**
    Round 1: `GlassScene::new` was fabricating a hardcoded demo `GlassGroup`
-   nothing ever read — fixed. Round 2: `GlassMaterial::saturation`/
+   nothing ever read — fixed. Round 2 found `GlassMaterial::saturation`/
    `brightness`/`contrast`, `GlassOptics::surface_curvature`, and
-   `GlassSurface::interaction` have zero corresponding shader uniform —
-   not removed, but now documented on the fields so nobody assumes they
-   work. `reduced_transparency` confirmed genuinely wired;
+   `GlassSurface::interaction` with zero corresponding shader uniform;
+   `saturation`/`brightness`/`contrast` got wired for real during Phase 8
+   (a neutral-by-default color-grade stage in `glass.frag`) — the other two
+   are still genuinely dead and documented as such. `reduced_transparency`
+   confirmed genuinely wired;
    `reduced_motion` confirmed not (no motion system exists yet for it to
    affect). Backdrop/TextureHandle-beyond-FFI/RenderTarget haven't had this
    treatment yet — same method: grep every field's write-sites against its
@@ -214,9 +215,9 @@ not improvising an answer solo.
    not existing in the renderer at all yet (`GlassGroup` is dead data, per
    item 4) — this is substantial architecture work on its own, per the
    roadmap's own framing, not something to fold casually into other phases.
-9. **Phase 8.2 calibration itself** — `cargo run --example parameter_sweep`
-   generates the comparison candidates; running that and actually picking
-   values against `docs/references/figma-liquid-glass/` is still open,
+9. **Phase 8.5/8.8 defaults** — `cargo run --example parameter_sweep`
+   generates comparison candidates for `adaptive_response`/`clear_dimming`;
+   picking a shipped non-zero default (if any) for either is still open,
    deliberately left as a human step (see item 2).
 
 ## How to verify a change is real, not just "it compiled"
