@@ -7,37 +7,36 @@ visual reference for a future windowless, embeddable renderer.
 Copyright © 2026 Analogic Goose. Licensed under the MIT License; see
 [LICENSE](LICENSE).
 
-Prueba de concepto del material **Liquid Glass** de Apple (iOS 26) en Rust con
+Proof of concept for Apple's **Liquid Glass** material (iOS 26), written in Rust with
 [macroquad](https://github.com/not-fl3/macroquad) y shaders GLSL.
 
 El material replica el componente de Figma **"Liquid Glass - Regular - Large"**
-(y su variante **Dark**) capa por capa, con los valores leídos del propio
-archivo de Figma y calibrados comparando píxeles contra su render.
+(and its **Dark** variant) layer by layer, using values read from the Figma file
+and calibrated against its render.
 
-## Ejecutar
+## Run
 
 ```sh
 cargo run --release
 ```
 
-En debug también funciona, pero decodificar los JPEG de `assets/` es bastante
-más lento.
+Debug mode also works, but decoding the JPEGs in `assets/` is considerably slower.
 
-## Controles
+## Controls
 
-| Entrada | Acción |
+| Input | Action |
 |---|---|
-| Arrastrar con el ratón | Mover un panel |
-| `P` | Cambiar de perfil (Clear → Tinte blanco → Tinte negro) |
-| `1` – `4` | Cambiar el fondo |
-| `T` | Tinte blanco (Regular) / negro (Dark) sin cambiar el resto de valores |
-| `↑` / `↓` | Elegir parámetro |
-| `←` / `→` | Ajustar el parámetro elegido |
-| `H` | Ocultar/mostrar el panel de parámetros |
+| Drag with the mouse | Move a panel |
+| `P` | Cycle profiles (Clear → White tint → Black tint) |
+| `1` – `4` | Change the background |
+| `T` | White (Regular) / black (Dark) tint |
+| `↑` / `↓` | Select parameter |
+| `←` / `→` | Adjust selected parameter |
+| `H` | Hide/show parameter panel |
 
-## Cómo funciona
+## How it works
 
-Cada frame se hace en tres pasos:
+Each frame is rendered in three steps:
 
 1. **Escena.** El fondo se dibuja (sin deformar, como `object-fit: cover`) en
    un render target a resolución completa.

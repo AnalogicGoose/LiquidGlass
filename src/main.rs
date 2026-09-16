@@ -43,12 +43,12 @@ const PROFILES: [GlassProfile; 3] = [
         dark: false,
     },
     GlassProfile {
-        name: "Tinte blanco",
+        name: "White tint",
         values: [2., 30., 0.2, 16., 0.25, 0., 0.2, 1., 1.],
         dark: false,
     },
     GlassProfile {
-        name: "Tinte negro",
+        name: "Black tint",
         values: [2., 30., 0.2, 16., 0.25, 0., 0.2, 1., 1.],
         dark: true,
     },
@@ -65,7 +65,7 @@ fn window_conf() -> Conf {
 }
 fn load_background(bytes: &[u8]) -> Texture2D {
     let image = image::load_from_memory(bytes)
-        .expect("No se pudo decodificar la imagen de fondo")
+        .expect("Failed to decode background image")
         .to_rgba8();
     let texture = Texture2D::from_image(&Image {
         width: image.width() as u16,
@@ -158,13 +158,13 @@ fn draw_hud(
         ty += line_h;
     }
     for line in [
-        format!("Perfil {profile}  [P]"),
-        format!("Fondo {}/4  [1-4]", background + 1),
-        format!("Tinte {}  [T]", if dark { "negro" } else { "blanco" }),
-        format!("Calidad {:?}  [Q]", scene.quality),
-        "Arrastra los paneles con el raton".to_owned(),
-        "Flechas: elegir / ajustar  H: ocultar".to_owned(),
-        "D: debug de escena".to_owned(),
+        format!("Profile {profile}  [P]"),
+        format!("Background {}/4  [1-4]", background + 1),
+        format!("Tint {}  [T]", if dark { "black" } else { "white" }),
+        format!("Quality {:?}  [Q]", scene.quality),
+        "Drag panels with the mouse".to_owned(),
+        "Arrows: select / adjust  H: hide".to_owned(),
+        "D: scene debug".to_owned(),
     ] {
         draw_text(&line, x + 8., ty, 18., LIGHTGRAY);
         ty += line_h;
@@ -250,15 +250,15 @@ async fn main() {
         scene.surfaces.swap(0, 1);
     }
     let mut params = [
-        Param::new("Refraccion", 0., 100., 0.5),
-        Param::new("Profundidad", 1., 120., 40.),
+        Param::new("Refraction", 0., 100., 0.5),
+        Param::new("Depth", 1., 120., 40.),
         Param::new("Dispersion", 0., 1., 0.5),
         Param::new("Frost", 0., 48., 16.),
-        Param::new("Luz", 0., 1., 0.5),
-        Param::new("Angulo luz", -180., 180., 90.),
+        Param::new("Light", 0., 1., 0.5),
+        Param::new("Light angle", -180., 180., 90.),
         Param::new("Splay", 0., 1., 0.5),
-        Param::new("Tinte", 0., 1., 0.5),
-        Param::new("Sombra", 0., 2., 1.),
+        Param::new("Tint", 0., 1., 0.5),
+        Param::new("Shadow", 0., 2., 1.),
     ];
     let (mut selected, mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
         (0usize, true, false, false, 0usize, None::<Vec2>);
