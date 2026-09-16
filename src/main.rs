@@ -1,4 +1,6 @@
+use macroquad::hash;
 use macroquad::prelude::*;
+use macroquad::ui::{root_ui, widgets};
 use spark_glass::glass::*;
 use spark_glass::renderer::MacroquadGlassRenderer;
 use std::time::Instant;
@@ -15,16 +17,14 @@ struct Param {
     value: f32,
     min: f32,
     max: f32,
-    speed: f32,
 }
 impl Param {
-    const fn new(label: &'static str, min: f32, max: f32, speed: f32) -> Self {
+    const fn new(label: &'static str, min: f32, max: f32) -> Self {
         Self {
             label,
             value: 0.,
             min,
             max,
-            speed,
         }
     }
 }
@@ -99,98 +99,79 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
     );
 }
 
-/// Number of static hint lines `draw_hud` always draws below the parameter
-/// list (Profile/Background/Tint/Quality/drag hint/arrows hint/keys hint).
-const HUD_HINT_LINES: usize = 7;
-const HUD_PARAM_FONT: u16 = 20;
-const HUD_HINT_FONT: u16 = 18;
-const HUD_LINE_H: f32 = 20.0;
-const HUD_TEXT_X: f32 = 8.0;
-/// Distance from the panel's top edge to the first line's text baseline.
-const HUD_FIRST_BASELINE: f32 = 22.0;
-/// Distance from the last line's text baseline down to the panel's bottom
-/// edge — generous enough to keep descenders inside the panel even though
-/// macroquad's font metrics don't line up exactly with `HUD_LINE_H`.
-const HUD_BOTTOM_PAD: f32 = 36.0;
-
-/// The HUD panel's text content — the single source of truth for both
-/// sizing the glass panel behind it (`hud_size`, used by `debug_hud_surface`)
-/// and drawing the text on top of it (`draw_hud`), so the two can never
-/// disagree about how many lines there are, how wide they are, or what they
-/// say. A save/reset confirmation replaces the last hint line in place
-/// rather than appending an 8th, so the line count here never changes for
-/// that.
-fn hud_texts(
-    params: &[Param],
-    selected: usize,
-    profile: &str,
-    background: usize,
-    dark: bool,
-    quality: GlassQuality,
-    save_message: Option<&str>,
-) -> (Vec<String>, [String; HUD_HINT_LINES]) {
-    let param_lines = params
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            format!(
-                "{} {:<12} {:>7.2}",
-                if i == selected { ">" } else { " " },
-                p.label,
-                p.value
-            )
-        })
-        .collect();
-    let hint_lines = [
-        format!("Profile {profile}  [P]  R: reset it"),
-        format!("Background {}/4  [1-4]", background + 1),
-        format!("Tint {}  [T]", if dark { "black" } else { "white" }),
-        format!("Quality {quality:?}  [Q]"),
-        "Drag panels with the mouse".to_owned(),
-        "Arrows: select / adjust  H: hide".to_owned(),
-        save_message
-            .map(str::to_owned)
-            .unwrap_or_else(|| "D: scene debug   S: save all 3 profiles".to_owned()),
+/// Demo scenes navigable via `[`/`]` or the config panel's Demo buttons.
+/// Only `Reference` is driven by the config-mode sliders/profiles below —
+/// the others are fixed comparison scenes to look at, not tune, mirroring
+/// `examples/visual_regression.rs`'s named scenes so both tools agree on
+/// what these look like.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DemoScene {
+    Reference,
+    PanelOnly,
+    PillOnly,
+    DarkTintPanel,
+    OverlappingPanels,
+    StyleGallery,
+}
+impl DemoScene {
+    const ALL: [DemoScene; 6] = [
+        DemoScene::Reference,
+        DemoScene::PanelOnly,
+        DemoScene::PillOnly,
+        DemoScene::DarkTintPanel,
+        DemoScene::OverlappingPanels,
+        DemoScene::StyleGallery,
     ];
-    (param_lines, hint_lines)
+    fn label(self) -> &'static str {
+        match self {
+            DemoScene::Reference => "Reference (tunable)",
+            DemoScene::PanelOnly => "Panel only",
+            DemoScene::PillOnly => "Pill only",
+            DemoScene::DarkTintPanel => "Dark tint panel",
+            DemoScene::OverlappingPanels => "Overlapping panels",
+            DemoScene::StyleGallery => "Style gallery",
+        }
+    }
+    fn index(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|s| *s == self)
+            .expect("self is always a member of ALL")
+    }
+    fn next(self) -> Self {
+        Self::ALL[(self.index() + 1) % Self::ALL.len()]
+    }
+    fn prev(self) -> Self {
+        Self::ALL[(self.index() + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
 }
 
-/// The panel size for exactly this HUD content: wide enough for its longest
-/// line (measured, not guessed — profile names and enum labels vary in
-/// width) and tall enough for every line.
-fn hud_size(param_lines: &[String], hint_lines: &[String]) -> Vec2 {
-    let mut max_w = 0.0f32;
-    for line in param_lines {
-        max_w = max_w.max(measure_text(line, None, HUD_PARAM_FONT, 1.0).width);
-    }
-    for line in hint_lines {
-        max_w = max_w.max(measure_text(line, None, HUD_HINT_FONT, 1.0).width);
-    }
-    let lines = (param_lines.len() + hint_lines.len()) as f32;
-    vec2(
-        max_w + HUD_TEXT_X * 2.0,
-        HUD_FIRST_BASELINE + (lines - 1.0) * HUD_LINE_H + HUD_BOTTOM_PAD,
-    )
-}
-
-fn debug_hud_surface(height: f32, param_lines: &[String], hint_lines: &[String]) -> GlassSurface {
-    let size = hud_size(param_lines, hint_lines);
-    let center = vec2(16.0 + size.x * 0.5, height - 16.0 - size.y * 0.5);
-    // Always a strongly-tinted, near-opaque dark panel — not the thin/
-    // adaptive glass used elsewhere. The HUD sits over whatever backdrop or
-    // profile the user is currently looking at, so its own readability
-    // can't depend on either; a fixed high-opacity dark panel with fixed
-    // light text is the only combination that's reliably legible.
-    let (mut material, optics, lighting) = preset(GlassStyle::Thin, true);
-    material.dark_tint = true;
-    material.tint_opacity = 0.92;
+fn panel(id: u64, center: Vec2, dark: bool) -> GlassSurface {
+    let (material, optics, lighting) = preset(GlassStyle::Regular, dark);
     GlassSurface {
-        id: u64::MAX,
+        id,
         geometry: GlassGeometry::RoundedRect {
             center,
-            size,
-            radius: 14.0,
-            smoothing: 0.45,
+            size: vec2(640., 498.),
+            radius: 34.,
+            smoothing: 0.6,
+        },
+        material,
+        optics,
+        lighting,
+        interaction: GlassInteraction::Idle,
+        style: GlassStyle::Regular,
+    }
+}
+fn pill(id: u64, center: Vec2) -> GlassSurface {
+    let (material, optics, lighting) = preset(GlassStyle::Control, false);
+    GlassSurface {
+        id,
+        geometry: GlassGeometry::RoundedRect {
+            center,
+            size: vec2(380., 88.),
+            radius: 44.,
+            smoothing: 0.,
         },
         material,
         optics,
@@ -199,6 +180,55 @@ fn debug_hud_surface(height: f32, param_lines: &[String], hint_lines: &[String])
         style: GlassStyle::Control,
     }
 }
+fn style_swatch(id: u64, center: Vec2, style: GlassStyle) -> GlassSurface {
+    let (material, optics, lighting) = preset(style, false);
+    GlassSurface {
+        id,
+        geometry: GlassGeometry::RoundedRect {
+            center,
+            size: vec2(220., 160.),
+            radius: 24.,
+            smoothing: 0.5,
+        },
+        material,
+        optics,
+        lighting,
+        interaction: GlassInteraction::Idle,
+        style,
+    }
+}
+
+/// Builds the fixed surface list for a demo scene. `Reference`'s surfaces
+/// are the ones `apply_tuning` drives from the config-mode sliders/profiles;
+/// every other scene is a fixed comparison rendering.
+fn build_demo_surfaces(demo: DemoScene, w: f32, h: f32) -> Vec<GlassSurface> {
+    match demo {
+        DemoScene::Reference => vec![panel(1, vec2(w * 0.5, h * 0.4), false), pill(2, vec2(w * 0.5, h * 0.86))],
+        DemoScene::PanelOnly => vec![panel(1, vec2(w * 0.5, h * 0.5), false)],
+        DemoScene::PillOnly => vec![pill(1, vec2(w * 0.5, h * 0.5))],
+        DemoScene::DarkTintPanel => vec![panel(1, vec2(w * 0.5, h * 0.5), true)],
+        DemoScene::OverlappingPanels => vec![
+            panel(1, vec2(w * 0.42, h * 0.5), false),
+            panel(2, vec2(w * 0.58, h * 0.5), false),
+        ],
+        DemoScene::StyleGallery => {
+            let spacing = 250.0;
+            let start_x = w * 0.5 - spacing * 2.0;
+            [
+                GlassStyle::Thin,
+                GlassStyle::Control,
+                GlassStyle::Regular,
+                GlassStyle::Navigation,
+                GlassStyle::Prominent,
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, style)| style_swatch((i + 1) as u64, vec2(start_x + spacing * i as f32, h * 0.5), style))
+            .collect()
+        }
+    }
+}
+
 fn apply_profile(profile: &GlassProfile, params: &mut [Param], dark: &mut bool) {
     for (param, value) in params.iter_mut().zip(profile.values) {
         param.value = value;
@@ -229,7 +259,7 @@ fn save_profiles(profiles: &[GlassProfile; 3]) -> std::io::Result<()> {
     use std::io::Write;
     let mut out = String::new();
     out.push_str("# SparkGlass tuned profiles\n");
-    out.push_str("# Saved interactively from `cargo run` (press S in the HUD) — not committed to git.\n");
+    out.push_str("# Saved interactively from `cargo run` (press S / the Save button) — not committed to git.\n");
     out.push_str("# To apply: read this file and update src/glass.rs's preset() / main.rs's PROFILES accordingly.\n\n");
     for profile in profiles {
         out.push_str(&format!("[{}]\n", profile.name));
@@ -246,40 +276,13 @@ fn save_profiles(profiles: &[GlassProfile; 3]) -> std::io::Result<()> {
     file.write_all(out.as_bytes())
 }
 
-fn draw_hud(
-    param_lines: &[String],
-    hint_lines: &[String],
-    selected: usize,
-    save_message_active: bool,
-    height: f32,
-) {
-    // The panel itself (debug_hud_surface) is now always a fixed dark,
-    // near-opaque tint, so the text on top of it can be a fixed light
-    // palette too — no more guessing at contrast against whatever backdrop
-    // or profile happens to be showing through.
-    let (text_color, selected_color, hint_color) = (WHITE, YELLOW, LIGHTGRAY);
-
-    let size = hud_size(param_lines, hint_lines);
-    let x = 16.;
-    let panel_top = height - 16. - size.y;
-    let mut ty = panel_top + HUD_FIRST_BASELINE;
-    for (i, line) in param_lines.iter().enumerate() {
-        draw_text(
-            line,
-            x + HUD_TEXT_X,
-            ty,
-            HUD_PARAM_FONT as f32,
-            if i == selected { selected_color } else { text_color },
-        );
-        ty += HUD_LINE_H;
-    }
-    for (i, line) in hint_lines.iter().enumerate() {
-        let is_save_message = save_message_active && i == hint_lines.len() - 1;
-        let color = if is_save_message { GREEN } else { hint_color };
-        draw_text(line, x + HUD_TEXT_X, ty, HUD_HINT_FONT as f32, color);
-        ty += HUD_LINE_H;
+fn ensure_background_loaded(i: usize, background: &mut usize, backgrounds: &mut [Option<Texture2D>; 4]) {
+    *background = i;
+    if backgrounds[i].is_none() {
+        backgrounds[i] = Some(load_background(BACKGROUNDS[i]));
     }
 }
+
 fn draw_debug(scene: &GlassScene) {
     for (z, s) in scene.surfaces.iter().enumerate() {
         let g = s.geometry;
@@ -310,6 +313,16 @@ fn draw_debug(scene: &GlassScene) {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    // Not compared against anything by scripts/verify_backends.sh (that
+    // script's byte-identical check uses examples/sandbox.rs as its
+    // baseline, not this binary) — this is a manual/informational
+    // reference capture only. Note it will NOT include the config panel:
+    // macroquad::ui defers its own draw to `next_frame()`'s internal
+    // end_frame() (see macroquad's Stage::draw), which runs after this
+    // frame's `get_screen_data()` call below, not before it. That's a
+    // property of macroquad's UI, not a bug here — confirmed by comparing
+    // against a real OS-level screenshot of the live window, which does
+    // show the panel.
     let mut capture_path = std::env::var_os("SPARK_GLASS_CAPTURE").map(std::path::PathBuf::from);
     let benchmark_frames = std::env::var("SPARK_GLASS_BENCHMARK_FRAMES")
         .ok()
@@ -321,38 +334,11 @@ async fn main() {
     let mut backgrounds: [Option<Texture2D>; 4] = Default::default();
     let mut background = 0;
     backgrounds[0] = Some(load_background(BACKGROUNDS[0]));
-    let (material, optics, lighting) = preset(GlassStyle::Regular, false);
+
     let (w, h) = (screen_width(), screen_height());
-    let mut scene = GlassScene::new(vec![
-        GlassSurface {
-            id: 1,
-            geometry: GlassGeometry::RoundedRect {
-                center: vec2(w * 0.5, h * 0.4),
-                size: vec2(640., 498.),
-                radius: 34.,
-                smoothing: 0.6,
-            },
-            material,
-            optics,
-            lighting,
-            interaction: GlassInteraction::Idle,
-            style: GlassStyle::Regular,
-        },
-        GlassSurface {
-            id: 2,
-            geometry: GlassGeometry::RoundedRect {
-                center: vec2(w * 0.5, h * 0.86),
-                size: vec2(380., 88.),
-                radius: 44.,
-                smoothing: 0.,
-            },
-            material,
-            optics,
-            lighting,
-            interaction: GlassInteraction::Idle,
-            style: GlassStyle::Control,
-        },
-    ]);
+    let mut demo_scene = DemoScene::Reference;
+    let mut previous_demo_scene = demo_scene;
+    let mut scene = GlassScene::new(build_demo_surfaces(demo_scene, w, h));
     if std::env::var_os("SPARK_GLASS_TEST_OVERLAP").is_some() {
         scene.surfaces[1].geometry = scene.surfaces[1]
             .geometry
@@ -360,22 +346,22 @@ async fn main() {
         scene.surfaces.swap(0, 1);
     }
     let mut params = [
-        Param::new("Refraction", 0., 100., 0.5),
-        Param::new("Depth", 1., 120., 40.),
-        Param::new("Dispersion", 0., 1., 0.5),
-        Param::new("Frost", 0., 48., 16.),
-        Param::new("Light", 0., 1., 0.5),
-        Param::new("Light angle", -180., 180., 90.),
-        Param::new("Splay", 0., 1., 0.5),
-        Param::new("Tint", 0., 1., 0.5),
-        Param::new("Shadow", 0., 2., 1.),
+        Param::new("Refraction", 0., 100.),
+        Param::new("Depth", 1., 120.),
+        Param::new("Dispersion", 0., 1.),
+        Param::new("Frost", 0., 48.),
+        Param::new("Light", 0., 1.),
+        Param::new("Light angle", -180., 180.),
+        Param::new("Splay", 0., 1.),
+        Param::new("Tint", 0., 1.),
+        Param::new("Shadow", 0., 2.),
     ];
-    let (mut selected, mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
-        (0usize, true, false, false, 0usize, None::<Vec2>);
-    // Config mode: a runtime-mutable copy of PROFILES. Every parameter edit
+    let (mut show_hud, mut show_debug, mut dark, mut profile, mut drag) =
+        (true, false, false, 0usize, None::<Vec2>);
+    // Config mode: a runtime-mutable copy of PROFILES. Every slider drag
     // below is written back into `profiles[profile]` immediately, so all 3
-    // profiles keep their own live-tuned state as you switch between them
-    // with P, and S dumps that whole array to disk on demand.
+    // profiles keep their own live-tuned state as you switch between them,
+    // and Save dumps that whole array to disk on demand.
     let mut profiles = PROFILES;
     let mut save_message: Option<(String, Instant)> = None;
     const SAVE_MESSAGE_LIFETIME: std::time::Duration = std::time::Duration::from_secs(3);
@@ -387,16 +373,17 @@ async fn main() {
     }
     loop {
         let (w, h, dt) = (screen_width(), screen_height(), get_frame_time());
+        let _ = dt;
         renderer.resize_if_needed(w, h);
+
+        // Keyboard shortcuts kept alongside the config panel's buttons/
+        // sliders below — either one reaches the same state.
         for (i, key) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4]
             .into_iter()
             .enumerate()
         {
             if is_key_pressed(key) {
-                background = i;
-                if backgrounds[i].is_none() {
-                    backgrounds[i] = Some(load_background(BACKGROUNDS[i]));
-                }
+                ensure_background_loaded(i, &mut background, &mut backgrounds);
             }
         }
         if is_key_pressed(KeyCode::H) {
@@ -404,6 +391,12 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::D) {
             show_debug = !show_debug;
+        }
+        if is_key_pressed(KeyCode::LeftBracket) {
+            demo_scene = demo_scene.prev();
+        }
+        if is_key_pressed(KeyCode::RightBracket) {
+            demo_scene = demo_scene.next();
         }
         if is_key_pressed(KeyCode::T) {
             dark = !dark;
@@ -444,24 +437,114 @@ async fn main() {
                 GlassQuality::Fallback => GlassQuality::Ultra,
             };
         }
-        if is_key_pressed(KeyCode::Up) {
-            selected = (selected + params.len() - 1) % params.len();
+
+        // Config panel: macroquad's own immediate-mode UI (sliders with a
+        // built-in numeric input box, buttons) instead of hand-drawn text
+        // + arrow-key adjustment. Every widget call both reads input AND
+        // queues its own draw for this frame — no separate "draw the HUD"
+        // step needed the way the old text HUD required.
+        if show_hud {
+            let panel_size = vec2(340.0, 620.0);
+            widgets::Window::new(hash!(), vec2(16.0, 16.0), panel_size)
+                .label("SparkGlass Config")
+                .titlebar(true)
+                .movable(true)
+                .ui(&mut root_ui(), |ui| {
+                    widgets::Label::new(format!("Demo: {}", demo_scene.label())).ui(ui);
+                    if widgets::Button::new("< Prev").ui(ui) {
+                        demo_scene = demo_scene.prev();
+                    }
+                    ui.same_line(0.0);
+                    if widgets::Button::new("Next >").ui(ui) {
+                        demo_scene = demo_scene.next();
+                    }
+                    ui.separator();
+
+                    if demo_scene == DemoScene::Reference {
+                        widgets::Label::new(format!("Profile: {}", profiles[profile].name)).ui(ui);
+                        if widgets::Button::new("< Prev").ui(ui) {
+                            profile = (profile + profiles.len() - 1) % profiles.len();
+                            apply_profile(&profiles[profile], &mut params, &mut dark);
+                        }
+                        ui.same_line(0.0);
+                        if widgets::Button::new("Next >").ui(ui) {
+                            profile = (profile + 1) % profiles.len();
+                            apply_profile(&profiles[profile], &mut params, &mut dark);
+                        }
+                        if widgets::Button::new("Reset profile [R]").ui(ui) {
+                            profiles[profile] = PROFILES[profile];
+                            apply_profile(&profiles[profile], &mut params, &mut dark);
+                            save_message =
+                                Some((format!("Reset {} to defaults", profiles[profile].name), Instant::now()));
+                        }
+                        ui.separator();
+
+                        for (i, param) in params.iter_mut().enumerate() {
+                            widgets::Slider::new(hash!("param", i), param.min..param.max)
+                                .label(param.label)
+                                .ui(ui, &mut param.value);
+                            profiles[profile].values[i] = param.value;
+                        }
+                        let mut dark_tint = dark;
+                        widgets::Checkbox::new(hash!("dark_tint"))
+                            .label("Dark tint  [T]")
+                            .ui(ui, &mut dark_tint);
+                        if dark_tint != dark {
+                            dark = dark_tint;
+                            profiles[profile].dark = dark;
+                        }
+                        if widgets::Button::new("Save all 3 profiles [S]").ui(ui) {
+                            let message = match save_profiles(&profiles) {
+                                Ok(()) => format!("Saved {TUNED_PROFILES_PATH}"),
+                                Err(e) => format!("Save failed: {e}"),
+                            };
+                            save_message = Some((message, Instant::now()));
+                        }
+                    } else {
+                        widgets::Label::new("(sliders apply to the Reference demo only)").ui(ui);
+                    }
+                    ui.separator();
+
+                    widgets::Label::new(format!("Background {}/4", background + 1)).ui(ui);
+                    for i in 0..4 {
+                        if widgets::Button::new(format!("{}", i + 1)).ui(ui) {
+                            ensure_background_loaded(i, &mut background, &mut backgrounds);
+                        }
+                        if i < 3 {
+                            ui.same_line(0.0);
+                        }
+                    }
+
+                    widgets::Label::new(format!("Quality: {:?}", scene.quality)).ui(ui);
+                    if widgets::Button::new("Cycle quality [Q]").ui(ui) {
+                        scene.quality = match scene.quality {
+                            GlassQuality::Ultra => GlassQuality::High,
+                            GlassQuality::High => GlassQuality::Medium,
+                            GlassQuality::Medium => GlassQuality::Low,
+                            GlassQuality::Low => GlassQuality::Fallback,
+                            GlassQuality::Fallback => GlassQuality::Ultra,
+                        };
+                    }
+                    ui.separator();
+                    widgets::Label::new("Drag panels with the mouse.  [ / ]: demo  H: hide  D: debug").ui(ui);
+                    if let Some((message, _)) = &save_message {
+                        widgets::Label::new(message.as_str()).ui(ui);
+                    }
+                });
         }
-        if is_key_pressed(KeyCode::Down) {
-            selected = (selected + 1) % params.len();
+
+        if demo_scene != previous_demo_scene {
+            scene.surfaces = build_demo_surfaces(demo_scene, w, h);
+            previous_demo_scene = demo_scene;
+            drag = None;
         }
-        if is_key_down(KeyCode::Right) {
-            let p = &mut params[selected];
-            p.value = (p.value + p.speed * dt).min(p.max);
-            profiles[profile].values[selected] = p.value;
-        }
-        if is_key_down(KeyCode::Left) {
-            let p = &mut params[selected];
-            p.value = (p.value - p.speed * dt).max(p.min);
-            profiles[profile].values[selected] = p.value;
-        }
+
         let mouse = Vec2::from(mouse_position());
-        if is_mouse_button_pressed(MouseButton::Left)
+        // Don't let a click on the config panel also grab whatever glass
+        // surface happens to be underneath it.
+        let ui_has_mouse = root_ui().is_mouse_over(mouse);
+        if !ui_has_mouse
+            && is_mouse_button_pressed(MouseButton::Left)
             && let Some(index) = scene.surface_at(mouse)
         {
             let surface = scene.surfaces[index];
@@ -479,22 +562,10 @@ async fn main() {
                 s.interaction = GlassInteraction::Idle;
             }
         }
-        apply_tuning(&mut scene, &params, dark);
-        scene.frame += 1;
-        let (param_lines, hint_lines) = hud_texts(
-            &params,
-            selected,
-            profiles[profile].name,
-            background,
-            dark,
-            scene.quality,
-            save_message.as_ref().map(|(message, _)| message.as_str()),
-        );
-        if show_hud {
-            scene
-                .surfaces
-                .push(debug_hud_surface(h, &param_lines, &hint_lines));
+        if demo_scene == DemoScene::Reference {
+            apply_tuning(&mut scene, &params, dark);
         }
+        scene.frame += 1;
         let render_start = Instant::now();
         renderer.begin_backdrop(|| {
             if let Some(texture) = &backgrounds[background] {
@@ -502,24 +573,12 @@ async fn main() {
             }
         });
         renderer.render(&scene, w, h);
-        if show_hud {
-            scene.surfaces.pop();
-        }
         if scene.frame > 2 {
-            frame_samples.push(dt * 1000.0);
+            frame_samples.push(get_frame_time() * 1000.0);
             render_samples.push(render_start.elapsed().as_secs_f32() * 1000.0);
         }
         if show_debug {
             draw_debug(&scene);
-        }
-        if show_hud {
-            draw_hud(
-                &param_lines,
-                &hint_lines,
-                selected,
-                save_message.is_some(),
-                h,
-            );
         }
         if scene.frame >= 5
             && let Some(path) = capture_path.take()
