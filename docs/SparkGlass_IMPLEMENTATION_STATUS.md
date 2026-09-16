@@ -15,7 +15,7 @@
 | 6 | Windows (WinUI 3 + ANGLE) integration | **Started, partially verified** — see below. No Windows dev machine here; using GitHub Actions windows-latest runners as the actual verification |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
-| 9 | Container interaction + motion | Not started (blocked on container/grouping semantics, which don't exist in the renderer yet) |
+| 9 | Container interaction + motion | **Started** — 9.1 (Explicit Glass Containers) done at the scene-model level; 9.2–9.5 not started, see below |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
@@ -477,6 +477,75 @@ Native foreground content              host-owned; drawn after SparkGlass,
 
 No code changes were needed for this sub-phase — it was a documentation
 task to make the mapping explicit, not a gap in the renderer.
+
+---
+
+## Phase 9.1 — Explicit Glass Containers (done)
+
+`GlassGroup` existed since the Phase 1 audit but was genuinely dead data —
+`GlassScene::groups` was always empty and nothing ever read it. This gives
+it real behavior:
+
+- `GlassScene::add_group(name, style, surface_ids)` declares a container.
+  Validates that `surface_ids` is non-empty, that `name` is unique within
+  the scene, and that every id already exists in `self.surfaces` —
+  returns `GroupError` otherwise rather than silently accepting a
+  malformed group.
+- `GlassScene::group(name)` / `group_surfaces(name)` look a group and its
+  current member surfaces back up. Membership is by stable `id`, not
+  vector index — the same reason `surface_at`'s hit-testing already used
+  ids, so a group survives `bring_to_front` reordering `self.surfaces`.
+  A member id with no matching surface (removed from the scene after the
+  group was declared) is silently skipped by `group_surfaces` rather than
+  treated as an error — group membership tracks intent, not scene
+  lifetime.
+- `GlassScene::bring_group_to_front(name)` — the group-level equivalent of
+  the existing single-surface `bring_to_front`: moves every member to the
+  front together, preserving their relative order, so a panel with an
+  attached control pill can be dragged as one cluster without the pill
+  getting left behind underneath it.
+- `GlassScene::apply_group_style(name)` — forces every member's `.style`
+  to match the group's, making "these elements belong to one material
+  region" (the roadmap's own phrase for 9.1) enforceable rather than a
+  convention the caller has to remember on every surface by hand. Extends
+  Phase 8.1's per-style material bucketing to the container level.
+
+**Verified:** 5 new unit tests in `src/glass.rs` (`cargo test --lib`) cover
+validation (empty/duplicate/unknown-id rejection), membership lookup
+including the removed-surface case, group-level reordering (including the
+no-op case for an unknown group name), and style enforcement touching only
+members. `scripts/verify_backends.sh` and `scripts/visual_regression.sh`
+both still pass unchanged — this phase only added new pure-Rust scene-model
+API, it didn't touch any renderer or shader, so there was nothing for
+those to catch, but they were run anyway rather than assumed clean.
+
+**Not done:** nothing in `src/main.rs` or the examples actually creates a
+group yet — the panel+pill demo scenes are still two independent surfaces.
+Wiring a real demo up is straightforward now that the API exists, but
+wasn't done here to avoid touching `src/main.rs`'s already-tuned
+interactive config mode without a specific reason to.
+
+## Phase 9.2 — Shared Sampling Regions (not started)
+
+## Phase 9.3 — Shared / Merged SDF (not started)
+
+The roadmap explicitly says not to require this before Phase 8's
+style-level work is complete — it now is, so this is unblocked, just not
+started.
+
+## Phase 9.4 — Morphing (not started)
+
+`GlassScene::reduced_motion` already exists and is plumbed through the FFI
+frame struct, waiting for a motion system to reduce — see its doc comment
+in `src/glass.rs`.
+
+## Phase 9.5 — Interaction Illumination (not started)
+
+`GlassSurface::interaction` already exists and is tracked (`src/main.rs`
+sets it while dragging a panel) but has zero corresponding shader uniform —
+see its doc comment in `src/glass.rs`. This is the most direct next step
+if 9.x work continues: the state already flows through the scene model,
+it just doesn't reach `glass.frag` yet.
 
 ---
 

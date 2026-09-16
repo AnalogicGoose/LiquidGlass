@@ -162,6 +162,33 @@ pub struct GlassGroup {
     pub style: GlassStyle,
 }
 
+/// Roadmap Phase 9.1 ("Explicit Glass Containers"): why a group couldn't be
+/// declared or why a lookup couldn't be made — see `GlassScene::add_group`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupError {
+    /// `add_group` was called with an empty `surface_ids` — a container
+    /// with no members isn't a container.
+    EmptyGroup,
+    /// Another group already used this name; names are how product code
+    /// looks a group back up, so they must be unique within a scene.
+    DuplicateName,
+    /// `surface_ids` referenced an id that isn't in `GlassScene::surfaces`
+    /// at the time `add_group` was called.
+    UnknownSurfaceId(u64),
+}
+
+impl std::fmt::Display for GroupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyGroup => write!(f, "a glass group needs at least one surface"),
+            Self::DuplicateName => write!(f, "a group with this name already exists in the scene"),
+            Self::UnknownSurfaceId(id) => write!(f, "surface id {id} is not in this scene"),
+        }
+    }
+}
+
+impl std::error::Error for GroupError {}
+
 /// Per-window shared rendering state. Its backdrop is rendered once by the
 /// renderer, then all surfaces sample it in this common coordinate system.
 #[derive(Debug)]
@@ -184,11 +211,11 @@ impl GlassScene {
     pub fn new(surfaces: Vec<GlassSurface>) -> Self {
         Self {
             surfaces,
-            // Container/group semantics are FUTURE work (architecture doc
-            // §13) — nothing reads `groups` yet. Left empty rather than
-            // seeded with placeholder data, since fabricated group
-            // membership referencing hardcoded surface ids would be wrong
-            // for any scene that doesn't happen to match them.
+            // Starts empty rather than seeded with placeholder data, since
+            // fabricated group membership referencing hardcoded surface
+            // ids would be wrong for any scene that doesn't happen to
+            // match them. Call `add_group` once the real surfaces (and
+            // their real ids) are known — see Phase 9.1 below.
             groups: Vec::new(),
             quality: GlassQuality::High,
             reduced_transparency: false,
@@ -206,6 +233,78 @@ impl GlassScene {
     pub fn bring_to_front(&mut self, index: usize) {
         let surface = self.surfaces.remove(index);
         self.surfaces.push(surface);
+    }
+
+    /// Roadmap Phase 9.1 ("Explicit Glass Containers"): declares that
+    /// `surface_ids` belong to one material region. Membership is by
+    /// stable `id`, not vector index, so it survives `bring_to_front`/
+    /// `bring_group_to_front` reordering `self.surfaces` — the same reason
+    /// `GlassSurface::id` exists at all (see `surface_at`'s hit-testing).
+    ///
+    /// Every id must already be in `self.surfaces`, and the name must be
+    /// unique within this scene — see `GroupError`.
+    pub fn add_group(&mut self, name: &'static str, style: GlassStyle, surface_ids: Vec<u64>) -> Result<(), GroupError> {
+        if surface_ids.is_empty() {
+            return Err(GroupError::EmptyGroup);
+        }
+        if self.groups.iter().any(|g| g.name == name) {
+            return Err(GroupError::DuplicateName);
+        }
+        for &id in &surface_ids {
+            if !self.surfaces.iter().any(|s| s.id == id) {
+                return Err(GroupError::UnknownSurfaceId(id));
+            }
+        }
+        self.groups.push(GlassGroup { name, surface_ids, style });
+        Ok(())
+    }
+
+    pub fn group(&self, name: &str) -> Option<&GlassGroup> {
+        self.groups.iter().find(|g| g.name == name)
+    }
+
+    /// Every surface currently in `self.surfaces` belonging to group
+    /// `name`, in their current z-order. A member id with no matching
+    /// surface (removed from the scene after the group was declared) is
+    /// silently skipped — group membership tracks intent, not scene
+    /// lifetime, so this is not an error case.
+    pub fn group_surfaces<'a>(&'a self, name: &str) -> impl Iterator<Item = &'a GlassSurface> + 'a {
+        let ids = self.group(name).map(|g| g.surface_ids.clone()).unwrap_or_default();
+        self.surfaces.iter().filter(move |s| ids.contains(&s.id))
+    }
+
+    /// The group-level equivalent of `bring_to_front`: moves every member
+    /// surface to the front together, preserving their relative order, so
+    /// e.g. dragging a panel with an attached control pill can move the
+    /// whole cluster without the pill getting left behind underneath it.
+    /// A no-op if `name` doesn't exist.
+    pub fn bring_group_to_front(&mut self, name: &str) {
+        let Some(ids) = self.group(name).map(|g| g.surface_ids.clone()) else {
+            return;
+        };
+        let (mut moved, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.surfaces)
+            .into_iter()
+            .partition(|s| ids.contains(&s.id));
+        moved.sort_by_key(|s| ids.iter().position(|&id| id == s.id));
+        self.surfaces = rest;
+        self.surfaces.extend(moved);
+    }
+
+    /// Forces every member surface's `.style` to match the group's —
+    /// Phase 9.1's "these elements belong to one material region" as
+    /// something enforceable, not just a convention the caller has to
+    /// remember by hand on every surface individually. Extends Phase
+    /// 8.1's per-style material bucketing (`preset()`) to the container
+    /// level. A no-op if `name` doesn't exist.
+    pub fn apply_group_style(&mut self, name: &str) {
+        let Some((ids, style)) = self.group(name).map(|g| (g.surface_ids.clone(), g.style)) else {
+            return;
+        };
+        for surface in &mut self.surfaces {
+            if ids.contains(&surface.id) {
+                surface.style = style;
+            }
+        }
     }
 }
 
@@ -292,5 +391,84 @@ mod tests {
             assert_eq!(material.clear_dimming, 0.0, "{style:?}");
             assert_eq!(material.adaptive_response, 0.0, "{style:?}");
         }
+    }
+
+    fn test_surface(id: u64) -> GlassSurface {
+        let (material, optics, lighting) = preset(GlassStyle::Regular, false);
+        GlassSurface {
+            id,
+            geometry: GlassGeometry::RoundedRect {
+                center: Vec2::ZERO,
+                size: vec2(10.0, 10.0),
+                radius: 4.0,
+                smoothing: 0.0,
+            },
+            material,
+            optics,
+            lighting,
+            interaction: GlassInteraction::Idle,
+            style: GlassStyle::Regular,
+        }
+    }
+
+    #[test]
+    fn add_group_rejects_empty_duplicate_and_unknown_ids() {
+        let mut scene = GlassScene::new(vec![test_surface(1), test_surface(2)]);
+        assert_eq!(scene.add_group("panel", GlassStyle::Regular, vec![]), Err(GroupError::EmptyGroup));
+        assert_eq!(
+            scene.add_group("panel", GlassStyle::Regular, vec![99]),
+            Err(GroupError::UnknownSurfaceId(99))
+        );
+        assert_eq!(scene.add_group("panel", GlassStyle::Regular, vec![1, 2]), Ok(()));
+        assert_eq!(
+            scene.add_group("panel", GlassStyle::Regular, vec![1]),
+            Err(GroupError::DuplicateName)
+        );
+    }
+
+    #[test]
+    fn group_surfaces_returns_only_members_and_skips_removed_ones() {
+        let mut scene = GlassScene::new(vec![test_surface(1), test_surface(2), test_surface(3)]);
+        scene.add_group("cluster", GlassStyle::Regular, vec![1, 3]).unwrap();
+        let members: Vec<u64> = scene.group_surfaces("cluster").map(|s| s.id).collect();
+        assert_eq!(members, vec![1, 3]);
+
+        // Removing a member surface from the scene (not from the group —
+        // membership tracks intent, not scene lifetime) shouldn't panic or
+        // resurrect it.
+        scene.surfaces.retain(|s| s.id != 3);
+        let members: Vec<u64> = scene.group_surfaces("cluster").map(|s| s.id).collect();
+        assert_eq!(members, vec![1]);
+    }
+
+    #[test]
+    fn bring_group_to_front_moves_members_together_preserving_relative_order() {
+        let mut scene = GlassScene::new(vec![test_surface(1), test_surface(2), test_surface(3), test_surface(4)]);
+        // Group declared as [1, 3]; scene z-order is currently [1, 2, 3, 4].
+        scene.add_group("cluster", GlassStyle::Regular, vec![1, 3]).unwrap();
+        scene.bring_group_to_front("cluster");
+        let order: Vec<u64> = scene.surfaces.iter().map(|s| s.id).collect();
+        // Non-members keep their relative order at the back; members move
+        // to the front together, in the group's declared order (matching
+        // `add_group`'s [1, 3], not whatever order `partition` happened to
+        // leave them in).
+        assert_eq!(order, vec![2, 4, 1, 3]);
+    }
+
+    #[test]
+    fn bring_group_to_front_is_a_no_op_for_an_unknown_group() {
+        let mut scene = GlassScene::new(vec![test_surface(1), test_surface(2)]);
+        scene.bring_group_to_front("does-not-exist");
+        let order: Vec<u64> = scene.surfaces.iter().map(|s| s.id).collect();
+        assert_eq!(order, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_group_style_only_touches_members() {
+        let mut scene = GlassScene::new(vec![test_surface(1), test_surface(2)]);
+        scene.add_group("pill", GlassStyle::Control, vec![1]).unwrap();
+        scene.apply_group_style("pill");
+        assert_eq!(scene.surfaces[0].style, GlassStyle::Control);
+        assert_eq!(scene.surfaces[1].style, GlassStyle::Regular);
     }
 }
