@@ -90,12 +90,16 @@ Verified two ways:
   `sg_import_gl_texture`, sets it as the backdrop, and confirms an unknown
   handle is rejected with `SG_ERROR_INVALID_TEXTURE`; then it creates a
   headless EGL pbuffer context and calls
-  `sg_create`/`sg_render_frame`/`sg_present`/`sg_destroy`, and deliberately
+  `sg_create`/`sg_render_frame`/`sg_present`, calls `sg_resize` and confirms
+  a full render/present cycle still succeeds at the new size (this path was
+  previously untested through the C ABI — Phase 3's own acceptance criteria
+  explicitly call out "resize behavior is correct"), then deliberately
   submits an `SGFrame` with a wrong `struct_size` to confirm the ABI-version
-  guard is actually enforced across a real FFI boundary. `sizeof(SGFrame)`
-  matched between `gcc` and `rustc` (40 bytes) with no manual padding in the
-  header, confirming the `#[repr(C)]` layout really is what the header
-  claims. Build/run instructions are in a comment at the top of that file.
+  guard is actually enforced across a real FFI boundary, before
+  `sg_destroy`. `sizeof(SGFrame)` matched between `gcc` and `rustc`
+  (40 bytes) with no manual padding in the header, confirming the
+  `#[repr(C)]` layout really is what the header claims. Build/run
+  instructions are in a comment at the top of that file.
 
 Result codes and quality levels are declared in the C header as `int32_t`,
 not a C `enum` — a C enum's underlying type is implementation-defined, while

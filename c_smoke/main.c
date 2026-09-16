@@ -160,6 +160,34 @@ int main(void) {
     }
     printf("sg_present: OK\n");
 
+    /* sg_resize was never exercised by this smoke test before — resize to
+     * a smaller size (staying within the 800x600 pbuffer so sg_present's
+     * viewport call has real framebuffer to draw into) and confirm a full
+     * render/present cycle still succeeds at the new size. */
+    SGResult resize_result = sg_resize(ctx, 400.0f, 300.0f);
+    if (resize_result != SG_OK) {
+        fprintf(stderr, "sg_resize failed: %d (%s)\n", resize_result, sg_last_error(ctx));
+        return 1;
+    }
+    SGFrame resized_frame = frame;
+    resized_frame.width = 400.0f;
+    resized_frame.height = 300.0f;
+    element.center_x = 200.0f;
+    element.center_y = 150.0f;
+    element.size_x = 150.0f;
+    element.size_y = 100.0f;
+    SGResult resized_render_result = sg_render_frame(ctx, &resized_frame);
+    if (resized_render_result != SG_OK) {
+        fprintf(stderr, "sg_render_frame (post-resize) failed: %d (%s)\n", resized_render_result, sg_last_error(ctx));
+        return 1;
+    }
+    SGResult resized_present_result = sg_present(ctx, 400, 300);
+    if (resized_present_result != SG_OK) {
+        fprintf(stderr, "sg_present (post-resize) failed: %d\n", resized_present_result);
+        return 1;
+    }
+    printf("sg_resize + re-render + re-present: OK\n");
+
     /* Deliberately exercise the struct-versioning guard: an SGFrame from a
      * mismatched header must be rejected, not silently misread. */
     SGFrame bad_frame = frame;
