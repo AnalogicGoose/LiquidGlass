@@ -99,9 +99,21 @@ fn draw_cover(texture: &Texture2D, width: f32, height: f32) {
     );
 }
 
-fn debug_hud_surface(_width: f32, height: f32) -> GlassSurface {
-    let lines = 16.0;
-    let size = vec2(310.0, lines * 20.0 + 12.0);
+/// Number of static hint lines `draw_hud` always draws below the parameter
+/// list (Profile/Background/Tint/Quality/drag hint/arrows hint/keys hint) —
+/// the one thing that must stay in sync between `debug_hud_surface` (which
+/// sizes the panel) and `draw_hud` (which fills it). A save confirmation
+/// replaces the last hint line in place rather than adding an 8th, so this
+/// count never needs to change for that.
+const HUD_HINT_LINES: usize = 7;
+
+fn hud_line_count(param_count: usize) -> f32 {
+    (param_count + HUD_HINT_LINES) as f32
+}
+
+fn debug_hud_surface(_width: f32, height: f32, param_count: usize) -> GlassSurface {
+    let lines = hud_line_count(param_count);
+    let size = vec2(310.0, lines * 20.0 + 60.0);
     let center = vec2(16.0 + size.x * 0.5, height - 16.0 - size.y * 0.5);
     let (material, optics, lighting) = preset(GlassStyle::Thin, true);
     GlassSurface {
@@ -189,7 +201,7 @@ fn draw_hud(
         (BLACK, Color::new(0.55, 0.35, 0.0, 1.0), DARKGRAY)
     };
 
-    let lines = params.len() as f32 + 8. + if save_message.is_some() { 1. } else { 0. };
+    let lines = hud_line_count(params.len());
     let line_h = 20.;
     let (x, y) = (16., screen_height() - 16. - lines * line_h - 12.);
     let mut ty = y + 22.;
@@ -208,20 +220,30 @@ fn draw_hud(
         );
         ty += line_h;
     }
-    for line in [
-        format!("Profile {profile}  [P]"),
+    // Exactly HUD_HINT_LINES lines, always — a save confirmation replaces
+    // the last one in place instead of adding an 8th, so the panel above
+    // (sized for a fixed line count) never has to grow to fit it.
+    let hint_lines = [
+        format!("Profile {profile}  [P]  R: reset it"),
         format!("Background {}/4  [1-4]", background + 1),
         format!("Tint {}  [T]", if dark { "black" } else { "white" }),
         format!("Quality {:?}  [Q]", scene.quality),
         "Drag panels with the mouse".to_owned(),
         "Arrows: select / adjust  H: hide".to_owned(),
-        "D: scene debug   S: save all 3 profiles".to_owned(),
-    ] {
-        draw_text(&line, x + 8., ty, 18., hint_color);
+        save_message
+            .map(str::to_owned)
+            .unwrap_or_else(|| "D: scene debug   S: save all 3 profiles".to_owned()),
+    ];
+    debug_assert_eq!(hint_lines.len(), HUD_HINT_LINES);
+    for (i, line) in hint_lines.iter().enumerate() {
+        let is_save_message = save_message.is_some() && i == hint_lines.len() - 1;
+        let color = if is_save_message {
+            if dark { GREEN } else { DARKGREEN }
+        } else {
+            hint_color
+        };
+        draw_text(line, x + 8., ty, 18., color);
         ty += line_h;
-    }
-    if let Some(message) = save_message {
-        draw_text(message, x + 8., ty, 18., if dark { GREEN } else { DARKGREEN });
     }
 }
 fn draw_debug(scene: &GlassScene) {
@@ -321,7 +343,8 @@ async fn main() {
     // profiles keep their own live-tuned state as you switch between them
     // with P, and S dumps that whole array to disk on demand.
     let mut profiles = PROFILES;
-    let mut save_message: Option<String> = None;
+    let mut save_message: Option<(String, Instant)> = None;
+    const SAVE_MESSAGE_LIFETIME: std::time::Duration = std::time::Duration::from_secs(3);
     apply_profile(&profiles[profile], &mut params, &mut dark);
     if let Ok(value) = std::env::var("SPARK_GLASS_TEST_FROST")
         && let Ok(frost) = value.parse::<f32>()
@@ -357,10 +380,26 @@ async fn main() {
             apply_profile(&profiles[profile], &mut params, &mut dark);
         }
         if is_key_pressed(KeyCode::S) {
-            save_message = Some(match save_profiles(&profiles) {
+            let message = match save_profiles(&profiles) {
                 Ok(()) => format!("Saved {TUNED_PROFILES_PATH}"),
                 Err(e) => format!("Save failed: {e}"),
-            });
+            };
+            save_message = Some((message, Instant::now()));
+        }
+        if is_key_pressed(KeyCode::R) {
+            // Reset *only* the current profile back to its shipped default
+            // — since edits now persist across profile switches (that's
+            // the point of config mode), it's easy to drift a profile away
+            // from its original values while just exploring, with no way
+            // back short of restarting. This is that way back.
+            profiles[profile] = PROFILES[profile];
+            apply_profile(&profiles[profile], &mut params, &mut dark);
+            save_message = Some((format!("Reset {} to defaults", profiles[profile].name), Instant::now()));
+        }
+        if let Some((_, saved_at)) = &save_message
+            && saved_at.elapsed() > SAVE_MESSAGE_LIFETIME
+        {
+            save_message = None;
         }
         if is_key_pressed(KeyCode::Q) {
             scene.quality = match scene.quality {
@@ -409,7 +448,7 @@ async fn main() {
         apply_tuning(&mut scene, &params, dark);
         scene.frame += 1;
         if show_hud {
-            scene.surfaces.push(debug_hud_surface(w, h));
+            scene.surfaces.push(debug_hud_surface(w, h, params.len()));
         }
         let render_start = Instant::now();
         renderer.begin_backdrop(|| {
@@ -436,7 +475,7 @@ async fn main() {
                 profiles[profile].name,
                 dark,
                 &scene,
-                save_message.as_deref(),
+                save_message.as_ref().map(|(message, _)| message.as_str()),
             );
         }
         if scene.frame >= 5
