@@ -12,19 +12,39 @@ Read `docs/SparkGlass_IMPLEMENTATION_STATUS.md` first — it's the living
 status doc and has the real detail. This file is only the context that
 doesn't fit there: what happened, what surprised us, what to watch out for.
 
-Short version: Phases 0–5 from `docs/SparkGlass_MASTER_ARCHITECTURE.md` §54
-are implemented and independently verified (not just "compiles"). Four
-separate host integrations — a `winit`+`glutin` sandbox, the `extern "C"`
-ABI called from Rust, a real GTK4 `GtkGLArea` widget, and a plain C program
-linked against the compiled `.so` — render byte-identical output. Phase 8
-(Apple Material Fidelity, `docs/SparkGlass_ROADMAP.md`) is also fully
-addressed now — see that doc's Phase 8.1–8.9 sections. Phase 6
-(Windows/WinUI/ANGLE) has not been started because there is no Windows
-environment available here to build or verify it against — don't write
-unverified Windows integration code; it would violate the project's own
-"don't assume compilation equals visual success" rule. Phase 7 (GoosicReborn
-integration) and Phase 9 (container/motion, blocked on `GlassGroup` being
-dead data) are the two open candidates for whatever comes next.
+Short version, as of `221272e`: Phases 0–5 from
+`docs/SparkGlass_MASTER_ARCHITECTURE.md` §54 are implemented and
+independently verified (not just "compiles"). Four separate host
+integrations — a `winit`+`glutin` sandbox, the `extern "C"` ABI called
+from Rust, a real GTK4 `GtkGLArea` widget, and a plain C program linked
+against the compiled `.so` — render byte-identical output. Phase 8 (Apple
+Material Fidelity) is fully addressed — see
+`SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 8.1–8.9 sections. Phase 9 is
+**started**: 9.1 (containers, `GlassGroup` is no longer dead data) and 9.5
+(interaction glow) are done; 9.2/9.3/9.4 are not. Phase 6 (Windows) is
+**started, not finished**: GitHub Actions `windows-latest` CI (no Windows
+dev machine exists here) proves the C ABI and GL/ANGLE rendering pipeline
+work on real Windows, but the actual WinUI 3 + `SwapChainPanel` product
+integration is still an unverified scaffold in `platform/windows/` — see
+that directory's own README for exactly what's uncertain. Phase 7
+(GoosicReborn integration) hasn't started at all; it's blocked on having
+access to that codebase.
+
+`src/main.rs` (`cargo run`) also went through a full UI rework this
+session, prompted directly by the team actually using it: unified demo
+navigation (`DemoScene`, `[`/`]` to cycle, including an `AppleReference`
+scene that renders our own glass on top of real macOS/Apple Music
+screenshots from `docs/references/apple-liquid-glass/` for direct
+comparison), a config panel that's real SparkGlass instead of a plain UI
+box (`config_panel_glass()` + `build_glass_skin()`), and all 12 tunable
+parameters exposed as sliders (not just the original 9 — Phase 8.5/8.8's
+`clear_dimming`/`adaptive_response`/`ambient_reflection` are now
+live-tunable). One real bug surfaced and got fixed along the way:
+`ambient_reflection`'s first implementation only ever reached the
+top/bottom edges and was too subtle to see — see
+`SparkGlass_IMPLEMENTATION_STATUS.md`'s "Extension: ambient reflection"
+section for the fix and how it was actually verified (cropped edge
+comparisons, not just an overall diff number).
 
 ## Things that will trip you up if you don't know them
 
@@ -146,27 +166,39 @@ not improvising an answer solo.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`ad221b6` as of this
+1. **Nothing is currently broken** — the last commit (`221272e` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`, including all
    three windowed backends. Safe to pick up from any angle below.
    `scripts/visual_regression.sh` and `scripts/verify_backends.sh` both
    pass; run them after any shader or renderer change before trusting it.
+   The Windows CI workflow's `c-abi-smoke` job was still finishing its
+   first real pass (after fixing a missing `d3dcompiler_47.dll`) when this
+   was written — check its latest run before assuming it's green.
 2. **`docs/SparkGlass_ROADMAP.md`'s Phase 8 (Apple Material Fidelity) is
    now fully addressed** — see `SparkGlass_IMPLEMENTATION_STATUS.md`'s
    Phase 8.1–8.9 sections for the detail per sub-phase. Short version: 8.1
    (per-style material bucketing) and 8.2 (optical calibration) were done
    earlier and confirmed correct by the team directly, via `cargo run`'s
-   interactive config mode (`P`/arrows/`S`/`R` — see `src/main.rs`) rather
-   than only the static sweep tool. 8.3/8.4/8.6/8.7/8.9 turned out to
-   already be satisfied by the existing shader architecture (documented,
-   no code change). 8.5 (Adaptive Material Response) and 8.8 (Clear
-   Material Dimming) are new: `GlassMaterial.adaptive_response` and
-   `.clear_dimming`, both `0.0` (a proven no-op — see the goldens) in
-   every shipped preset, with real effects once turned on
-   (`examples/parameter_sweep.rs` has sweeps for both). **Picking a
-   non-zero default for either is an open human decision, same as 8.2's
-   values were** — don't guess at one; ask.
+   interactive config mode rather than only the static sweep tool.
+   8.3/8.4/8.6/8.7/8.9 turned out to already be satisfied by the existing
+   shader architecture (documented, no code change). 8.5 (Adaptive
+   Material Response) and 8.8 (Clear Material Dimming) are new:
+   `GlassMaterial.adaptive_response`/`.clear_dimming`/`.ambient_reflection`,
+   all `0.0` (a proven no-op — see the goldens) in every shipped preset,
+   with real effects once turned on. **`ambient_reflection`'s first cut
+   was actually broken** — reused Figma's top/bottom-only inner-shadow
+   geometry, so a panel with colorful backdrop content to its *sides*
+   showed nothing no matter the slider value, and the team caught it
+   directly ("compare this with the reference... in our case it's not
+   [happening]"). Fixed into a real omnidirectional rim band — see that
+   section in the status doc for how it was actually re-verified (cropped
+   left/right edges separately, not just one diff number). **Picking a
+   non-zero shipped default for any of the three is still an open human
+   decision** — don't guess at one; ask. `src/main.rs`'s config panel now
+   exposes all three as live sliders, including over real Apple reference
+   photos (`DemoScene::AppleReference`), specifically so that decision can
+   be made by looking, not by reading sweep PNGs.
 3. **Figma reference material exists** at `docs/references/`: the actual
    file the shader constants were almost certainly calibrated against
    (same source photo as `assets/image1.jpg`, components named/sized to
@@ -208,17 +240,34 @@ not improvising an answer solo.
    popups, scrolling) still composites cleanly, and eventually whether
    anything on the WinUI side has a similar concern once that platform is
    reachable. The roadmap is explicit: don't freeze this from one GTK test.
-7. **Phase 6 (Windows)** only becomes attemptable with actual access to a
-   Windows machine or CI runner to build and screenshot-verify against — do
-   not write unverified WinUI/ANGLE integration code and mark it "done."
-8. **Phase 9 (container/motion)** is blocked on container/grouping semantics
-   not existing in the renderer at all yet (`GlassGroup` is dead data, per
-   item 4) — this is substantial architecture work on its own, per the
-   roadmap's own framing, not something to fold casually into other phases.
-9. **Phase 8.5/8.8 defaults** — `cargo run --example parameter_sweep`
-   generates comparison candidates for `adaptive_response`/`clear_dimming`;
-   picking a shipped non-zero default (if any) for either is still open,
-   deliberately left as a human step (see item 2).
+7. **Phase 6 (Windows) — what's left specifically.** CI now covers: native
+   MSVC build + unit tests + C-ABI export check
+   (`native-build-and-test`), and building/linking/running `c_smoke.exe`
+   against the cdylib through real ANGLE (`c-abi-smoke`). What's NOT
+   covered and needs an actual Windows machine + Visual Studio: everything
+   in `platform/windows/` (the WinUI 3 `SwapChainPanel` + ANGLE host
+   scaffold) — it has never been compiled, only reviewed. That
+   directory's own README lists exactly what's uncertain (mainly the EGL
+   `SwapChainPanel` native-window property-set keys, an ANGLE-internal,
+   version-sensitive contract). Don't mark Phase 6 "done" until that
+   scaffold actually builds and produces a real screenshot.
+8. **Phase 9 — what's left specifically.** 9.1 (Explicit Glass Containers:
+   `GlassScene::add_group`/`group_surfaces`/`bring_group_to_front`/
+   `apply_group_style`) and 9.5 (Interaction Illumination: `u_interaction`
+   in `glass.frag`, driven by `interaction_energy()`) are done and tested.
+   9.2 (Shared Sampling Regions), 9.3 (Shared/Merged SDF — the roadmap
+   says this is unblocked now that Phase 8 is done, just not started), and
+   9.4 (Morphing) are real, substantial architecture work, not started at
+   all.
+9. **Phase 7 — GoosicReborn integration.** Not started, not attempted,
+   blocked on having access to that codebase at all. This is likely the
+   single highest-value next step once it's unblocked, since it's the
+   actual point of the whole project — everything else has been building
+   toward a library that's ready to be integrated, not the integration
+   itself.
+10. **Phase 10 (performance)** — not started. The roadmap says wait until
+    material behavior is settled enough to measure meaningfully, which,
+    with Phase 8 done, is arguably now.
 
 ## How to verify a change is real, not just "it compiled"
 
