@@ -98,10 +98,11 @@ this exchange) or whether the user's situation has changed since.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`2c85697` as of this
-   writing) left everything building clean and passing every regression
-   check described in `SparkGlass_IMPLEMENTATION_STATUS.md`. Safe to pick up
-   from any angle below.
+1. **Nothing is currently broken** — the last commit (`495bf5e` as of this
+   writing, which completed the SparkGlass rename and dropped the `_poc`
+   crate name to `spark_glass`) left everything building clean and passing
+   every regression check described in `SparkGlass_IMPLEMENTATION_STATUS.md`.
+   Safe to pick up from any angle below.
 2. **Phase 1 (freeze semantics) audit — started, not finished.** One gap was
    found and fixed: `GlassScene::new` was fabricating a hardcoded demo
    `GlassGroup` nothing ever read. Go through the rest of the master doc's
