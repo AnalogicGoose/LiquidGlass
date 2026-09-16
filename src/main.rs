@@ -741,6 +741,17 @@ async fn main() {
 
         if demo_scene != previous_demo_scene {
             scene.surfaces = build_demo_surfaces(demo_scene, w, h);
+            scene.groups.clear();
+            if demo_scene == DemoScene::OverlappingPanels {
+                // Phase 9.3 (Shared/Merged SDF) showcase: grouping these two
+                // means GlassScene::merge_partner sees them as candidates to
+                // blend, and since they're both draggable like every other
+                // demo surface, dragging one toward/away from the other
+                // smoothly engages/disengages the merge live.
+                scene
+                    .add_group("overlapping", GlassStyle::Regular, vec![1, 2])
+                    .expect("both ids exist — just built by build_demo_surfaces");
+            }
             previous_demo_scene = demo_scene;
             drag = None;
         }

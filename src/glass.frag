@@ -52,6 +52,20 @@ uniform float u_ambient_reflection; // 0 = rim glow color is fixed, not sampled 
 // see glass.rs's interaction_energy()) is a no-op.
 uniform float u_interaction;
 
+// Phase 9.3 (docs/SparkGlass_ROADMAP.md): "Shared/Merged SDF" — blends
+// this surface's SDF with a nearby GlassGroup member's (glass.rs's
+// GlassScene::merge_partner picks which one and how strongly) so two
+// close glass surfaces become one continuous shape instead of two
+// overlapping ones with a visible seam. u_merge = 0 (every surface's
+// default when it has no close-enough group neighbor) is a true no-op —
+// merged_sd_shape() below returns exactly sd_shape() unchanged, and none
+// of the other u_merge_* uniforms are read.
+uniform float u_merge;
+uniform vec2 u_merge_center;
+uniform vec2 u_merge_size;
+uniform float u_merge_radius;
+uniform float u_merge_smoothing;
+
 const float IOR = 1.5;
 const vec3 INTERACTION_GLOW_COLOR = vec3(1.0, 0.98, 0.9); // warm white — reads as "lit", not "tinted"
 
@@ -79,13 +93,48 @@ const float EDGE_GLOW_OFFSET = 40.0; // offset Y y spread negativo de las inner 
 // empieza la curva antes (radio * (1 + smoothing)) y la aplana en la diagonal;
 // una superelipse con ese radio y exponente 2 + 2.4 * smoothing conserva el
 // mismo punto medio de la esquina que el arco circular original.
-float sd_shape(vec2 p, vec2 half_size, float radius) {
-    float r = clamp(radius * (1.0 + u_smoothing), 0.0, min(half_size.x, half_size.y));
-    float n = 2.0 + 2.4 * u_smoothing;
+float sd_shape_ex(vec2 p, vec2 half_size, float radius, float smoothing) {
+    float r = clamp(radius * (1.0 + smoothing), 0.0, min(half_size.x, half_size.y));
+    float n = 2.0 + 2.4 * smoothing;
     vec2 q = abs(p) - half_size + r;
     vec2 c = max(q, 0.0) / max(r, 1e-3);
     float corner = pow(pow(c.x, n) + pow(c.y, n), 1.0 / n) * r;
     return min(max(q.x, q.y), 0.0) + corner - r;
+}
+
+// This surface's own shape, using its own u_smoothing — every call site in
+// this file went through this one function until Phase 9.3 added
+// merged_sd_shape() below; kept as a thin wrapper so nothing else has to
+// change.
+float sd_shape(vec2 p, vec2 half_size, float radius) {
+    return sd_shape_ex(p, half_size, radius, u_smoothing);
+}
+
+// Phase 9.3 — Shared/Merged SDF. Drop-in replacement for sd_shape() used
+// everywhere in this file: at u_merge = 0 this returns exactly
+// sd_shape(p, half_size, radius) (`h` collapses `merged` to `sd_a`, then
+// `mix(sd_a, merged, 0.0)` returns `sd_a` unchanged), so every caller —
+// coverage, the surface normal, the outline ring, the drop shadow, the
+// inner-glow rim — automatically follows the merged silhouette once a
+// host sets u_merge > 0, without each needing its own merge-aware logic.
+// `p` may already carry a per-effect offset/spread (e.g. layer_outline's
+// ring variants) — `p + u_center - u_merge_center` re-expresses that same
+// local offset relative to shape B's own center, so the blend is
+// consistent across every variant this function gets called with.
+float merged_sd_shape(vec2 p, vec2 half_size, float radius) {
+    float sd_a = sd_shape(p, half_size, radius);
+    if (u_merge <= 0.0) {
+        return sd_a;
+    }
+    vec2 p_b = p + u_center - u_merge_center;
+    float sd_b = sd_shape_ex(p_b, u_merge_size * 0.5, u_merge_radius, u_merge_smoothing);
+    // Polynomial smooth-min (Inigo Quilez) — k is the blend radius in px,
+    // fixed rather than tunable for now since it's a visual constant, not
+    // a per-material knob; revisit if a product needs it configurable.
+    float k = 40.0;
+    float h = clamp(0.5 + 0.5 * (sd_b - sd_a) / k, 0.0, 1.0);
+    float merged = mix(sd_b, sd_a, h) - k * h * (1.0 - h);
+    return mix(sd_a, merged, u_merge);
 }
 
 float erf_approx(float x) {
@@ -137,7 +186,7 @@ vec3 sample_dispersed(sampler2D tex, vec2 px, vec2 offset) {
 float layer_shadow(vec2 p, vec2 half_size, float coverage) {
     vec2 offset = vec2(0.0, mix(LIGHT_SHADOW_OFFSET, DARK_SHADOW_OFFSET, u_tint_mode));
     float opacity = mix(LIGHT_SHADOW_OPACITY, DARK_SHADOW_OPACITY, u_tint_mode);
-    float sd = sd_shape(p - offset, half_size, u_radius);
+    float sd = merged_sd_shape(p - offset, half_size, u_radius);
     return u_shadow * opacity * blurred_coverage(sd, SHADOW_SIGMA) * (1.0 - coverage);
 }
 
@@ -146,9 +195,9 @@ float layer_shadow(vec2 p, vec2 half_size, float coverage) {
 // desplazadas ±1.25 px en X, que asoman por los laterales. Cada una se compone
 // por separado, así que en los laterales el oscurecimiento se acumula.
 vec3 layer_outline(vec3 backdrop, vec2 p, vec2 half_size, float coverage) {
-    float ring_all = hard_coverage(sd_shape(p, half_size + 0.5, u_radius + 0.5));
-    float ring_left = hard_coverage(sd_shape(p + vec2(1.25, 0.0), half_size - 0.75, u_radius - 0.75));
-    float ring_right = hard_coverage(sd_shape(p - vec2(1.25, 0.0), half_size - 0.75, u_radius - 0.75));
+    float ring_all = hard_coverage(merged_sd_shape(p, half_size + 0.5, u_radius + 0.5));
+    float ring_left = hard_coverage(merged_sd_shape(p + vec2(1.25, 0.0), half_size - 0.75, u_radius - 0.75));
+    float ring_right = hard_coverage(merged_sd_shape(p - vec2(1.25, 0.0), half_size - 0.75, u_radius - 0.75));
 
     vec3 burn = mix(LIGHT_OUTLINE_COLOR, DARK_OUTLINE_COLOR, u_tint_mode) - 1.0;
     vec3 col = backdrop;
@@ -209,8 +258,8 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     // Normal 2D hacia fuera a partir del gradiente del SDF.
     vec2 e = vec2(0.5, 0.0);
     vec2 n2 = vec2(
-        sd_shape(p + e.xy, half_size, u_radius) - sd_shape(p - e.xy, half_size, u_radius),
-        sd_shape(p + e.yx, half_size, u_radius) - sd_shape(p - e.yx, half_size, u_radius)
+        merged_sd_shape(p + e.xy, half_size, u_radius) - merged_sd_shape(p - e.xy, half_size, u_radius),
+        merged_sd_shape(p + e.yx, half_size, u_radius) - merged_sd_shape(p - e.yx, half_size, u_radius)
     );
     float n2_len = length(n2);
     n2 = n2_len > 1e-5 ? n2 / n2_len : vec2(0.0);
@@ -290,8 +339,8 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
     // apenas hay luz.
     vec2 glow_half = half_size + EDGE_GLOW_OFFSET;
     vec2 glow_offset = vec2(0.0, EDGE_GLOW_OFFSET);
-    float glow_top = 1.0 - blurred_coverage(sd_shape(p - glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
-    float glow_bottom = 1.0 - blurred_coverage(sd_shape(p + glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
+    float glow_top = 1.0 - blurred_coverage(merged_sd_shape(p - glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
+    float glow_bottom = 1.0 - blurred_coverage(merged_sd_shape(p + glow_offset, glow_half, u_radius), EDGE_GLOW_SIGMA);
     vec3 rim_color = mix(LIGHT_EDGE_GLOW_COLOR, DARK_EDGE_GLOW_COLOR, u_tint_mode);
     col += rim_color * (glow_top + glow_bottom) * (1.0 + 0.25 * local_busyness);
 
@@ -336,14 +385,14 @@ vec3 layer_glass(vec2 p, vec2 half_size, float sd) {
 void main() {
     vec2 half_size = u_size * 0.5;
     vec2 p = v_px - u_center;
-    float sd = sd_shape(p, half_size, u_radius);
+    float sd = merged_sd_shape(p, half_size, u_radius);
     float coverage = hard_coverage(sd);
 
     float shadow = layer_shadow(p, half_size, coverage);
 
     // Fuera de la forma y del contorno (la mayor de sus formas es la de spread 0.5):
     // solo sombra, mezclada con alpha.
-    float outline_reach = hard_coverage(sd_shape(p, half_size + 0.5, u_radius + 0.5));
+    float outline_reach = hard_coverage(merged_sd_shape(p, half_size + 0.5, u_radius + 0.5));
     if (outline_reach <= 0.0) {
         if (shadow < 0.002) {
             discard;

@@ -336,6 +336,69 @@ impl GlassScene {
             }
         }
     }
+
+    /// Roadmap Phase 9.3 ("Shared/Merged SDF"): if `surface` belongs to a
+    /// group, and its nearest *other* member is close enough, returns that
+    /// neighbor plus a 0..1 blend strength that fades in as they approach
+    /// and fades out as they separate (never snaps on/off at a hard
+    /// threshold) — a renderer uses this to smooth-min the two surfaces'
+    /// SDFs into one continuous shape instead of two overlapping ones with
+    /// a visible seam. Returns `None` (a true no-op — see `glass.frag`'s
+    /// `u_merge`) for a surface with no group, a group of one, a neighbor
+    /// further than `MERGE_START_DISTANCE` away, or — see below — a
+    /// surface that isn't the pair's topmost member.
+    ///
+    /// **Only the later-drawn (topmost) member of a pair merges.** Early
+    /// versions of this had *both* members merge symmetrically, so each
+    /// independently rendered the *entire* union shape and they visually
+    /// fought each other — the bottom one's rendering would get almost
+    /// entirely overwritten by the top one's now-expanded coverage,
+    /// producing two differently-lit halves instead of one continuous
+    /// material. Since alpha compositing already draws surfaces
+    /// back-to-front, only the top surface needs to extend its own
+    /// coverage over the seam; the bottom one renders itself normally
+    /// (unmerged) and gets covered anyway wherever the two overlap.
+    ///
+    /// The gap estimate below approximates each surface as a circle (radius
+    /// = the average of its half-width and half-height) — deliberately not
+    /// exact rounded-rect-to-rounded-rect distance, since this only needs
+    /// to be good enough to drive a smooth blend *strength*; the actual
+    /// pixel-perfect merge shape comes from the real SDFs in the shader.
+    pub fn merge_partner(&self, surface: &GlassSurface) -> Option<(&GlassSurface, f32)> {
+        const MERGE_START_DISTANCE: f32 = 120.0;
+
+        let group = self
+            .groups
+            .iter()
+            .find(|g| g.surface_ids.contains(&surface.id))?;
+        let neighbor = group
+            .surface_ids
+            .iter()
+            .filter(|&&id| id != surface.id)
+            .filter_map(|&id| self.surfaces.iter().find(|s| s.id == id))
+            .min_by(|a, b| {
+                let da = a.geometry.center().distance(surface.geometry.center());
+                let db = b.geometry.center().distance(surface.geometry.center());
+                da.total_cmp(&db)
+            })?;
+
+        let approx_radius = |s: &GlassSurface| (s.geometry.size().x + s.geometry.size().y) * 0.25;
+        let gap = surface.geometry.center().distance(neighbor.geometry.center())
+            - approx_radius(surface)
+            - approx_radius(neighbor);
+        if gap >= MERGE_START_DISTANCE {
+            return None;
+        }
+
+        let surface_index = self.surfaces.iter().position(|s| s.id == surface.id)?;
+        let neighbor_index = self.surfaces.iter().position(|s| s.id == neighbor.id)?;
+        if surface_index < neighbor_index {
+            return None;
+        }
+
+        let strength = 1.0 - (gap.max(0.0) / MERGE_START_DISTANCE);
+        Some((neighbor, strength.clamp(0.0, 1.0)))
+    }
 }
 
 /// Sane semantic defaults. Product code should choose these rather than pass
@@ -426,12 +489,16 @@ mod tests {
     }
 
     fn test_surface(id: u64) -> GlassSurface {
+        test_surface_at(id, Vec2::ZERO, vec2(10.0, 10.0))
+    }
+
+    fn test_surface_at(id: u64, center: Vec2, size: Vec2) -> GlassSurface {
         let (material, optics, lighting) = preset(GlassStyle::Regular, false);
         GlassSurface {
             id,
             geometry: GlassGeometry::RoundedRect {
-                center: Vec2::ZERO,
-                size: vec2(10.0, 10.0),
+                center,
+                size,
                 radius: 4.0,
                 smoothing: 0.0,
             },
@@ -517,5 +584,77 @@ mod tests {
             assert!(pair[0] < pair[1], "{energies:?} should be strictly increasing");
         }
         assert_eq!(interaction_energy(GlassInteraction::Dragged), 1.0);
+    }
+
+    #[test]
+    fn merge_partner_is_none_without_a_group() {
+        let scene = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(100.0, 100.0)),
+            test_surface_at(2, vec2(10.0, 0.0), vec2(100.0, 100.0)),
+        ]);
+        assert!(scene.merge_partner(&scene.surfaces[0]).is_none());
+    }
+
+    #[test]
+    fn merge_partner_is_none_for_a_lone_group_member() {
+        let mut scene = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(100.0, 100.0)),
+            test_surface_at(2, vec2(10.0, 0.0), vec2(100.0, 100.0)),
+        ]);
+        scene.add_group("solo", GlassStyle::Regular, vec![1]).unwrap();
+        assert!(scene.merge_partner(&scene.surfaces[0]).is_none());
+    }
+
+    #[test]
+    fn merge_partner_is_none_when_group_members_are_far_apart() {
+        let mut scene = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(50.0, 50.0)),
+            test_surface_at(2, vec2(2000.0, 0.0), vec2(50.0, 50.0)),
+        ]);
+        scene.add_group("far", GlassStyle::Regular, vec![1, 2]).unwrap();
+        assert!(scene.merge_partner(&scene.surfaces[0]).is_none());
+    }
+
+    #[test]
+    fn merge_partner_strengthens_as_group_members_get_closer() {
+        // merge_partner only returns Some for the *later*-drawn (higher
+        // index) member of a pair — surfaces[1], not surfaces[0] — see its
+        // doc comment for why both merging symmetrically looked wrong.
+        let mut far = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(100.0, 100.0)),
+            test_surface_at(2, vec2(150.0, 0.0), vec2(100.0, 100.0)),
+        ]);
+        far.add_group("pair", GlassStyle::Regular, vec![1, 2]).unwrap();
+        assert!(far.merge_partner(&far.surfaces[0]).is_none(), "bottom member never merges");
+        let (partner, far_strength) = far.merge_partner(&far.surfaces[1]).expect("close enough to merge");
+        assert_eq!(partner.id, 1);
+        assert!(far_strength > 0.0 && far_strength < 1.0, "{far_strength}");
+
+        let mut close = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(100.0, 100.0)),
+            test_surface_at(2, vec2(20.0, 0.0), vec2(100.0, 100.0)),
+        ]);
+        close.add_group("pair", GlassStyle::Regular, vec![1, 2]).unwrap();
+        let (_, close_strength) = close.merge_partner(&close.surfaces[1]).expect("close enough to merge");
+
+        assert!(
+            close_strength > far_strength,
+            "closer surfaces should merge more strongly: {close_strength} vs {far_strength}"
+        );
+    }
+
+    #[test]
+    fn merge_partner_picks_the_nearest_of_several_group_members() {
+        let mut scene = GlassScene::new(vec![
+            test_surface_at(1, vec2(0.0, 0.0), vec2(50.0, 50.0)),
+            test_surface_at(2, vec2(40.0, 0.0), vec2(50.0, 50.0)),
+            test_surface_at(3, vec2(500.0, 0.0), vec2(50.0, 50.0)),
+        ]);
+        scene.add_group("trio", GlassStyle::Regular, vec![1, 2, 3]).unwrap();
+        // id 1 (index 0) is the bottom member of its nearest pair (id 2,
+        // index 1), so it never merges regardless of distance.
+        assert!(scene.merge_partner(&scene.surfaces[0]).is_none());
+        let (partner, _) = scene.merge_partner(&scene.surfaces[1]).expect("id 1 is close");
+        assert_eq!(partner.id, 1);
     }
 }

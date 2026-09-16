@@ -260,12 +260,19 @@ not improvising an answer solo.
    scaffold actually builds and produces a real screenshot.
 8. **Phase 9 — what's left specifically.** 9.1 (Explicit Glass Containers:
    `GlassScene::add_group`/`group_surfaces`/`bring_group_to_front`/
-   `apply_group_style`) and 9.5 (Interaction Illumination: `u_interaction`
-   in `glass.frag`, driven by `interaction_energy()`) are done and tested.
-   9.2 (Shared Sampling Regions), 9.3 (Shared/Merged SDF — the roadmap
-   says this is unblocked now that Phase 8 is done, just not started), and
-   9.4 (Morphing) are real, substantial architecture work, not started at
-   all.
+   `apply_group_style`), 9.3 (Shared/Merged SDF: `merge_partner()` +
+   `glass.frag`'s `merged_sd_shape()` — two close `GlassGroup` members
+   smooth-blend into one shape, live-previewable by dragging the panels in
+   `main.rs`'s `OverlappingPanels` demo), and 9.5 (Interaction
+   Illumination: `u_interaction` in `glass.frag`, driven by
+   `interaction_energy()`) are done and tested. 9.3 has a known, documented
+   limitation: only the topmost surface of a merging pair actually merges
+   (both merging symmetrically was tried first and looked wrong — see
+   `SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 9.3 section), so the seam
+   isn't perfectly invisible — the bottom surface's own edge highlights can
+   still faintly show through near the boundary. 9.2 (Shared Sampling
+   Regions) and 9.4 (Morphing) are real, substantial architecture work,
+   not started at all.
 9. **Phase 7 — GoosicReborn integration.** Not started, not attempted,
    blocked on having access to that codebase at all. This is likely the
    single highest-value next step once it's unblocked, since it's the

@@ -15,7 +15,7 @@
 | 6 | Windows (WinUI 3 + ANGLE) integration | **Paused, deliberately** — Linux-only focus for now per explicit team decision. GitHub Actions CI was removed; see below for what it did prove before being scrapped |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
-| 9 | Container interaction + motion | **Started** — 9.1 (Containers) and 9.5 (Interaction Illumination, surface-level) done; 9.2–9.4 not started, see below |
+| 9 | Container interaction + motion | **Started** — 9.1 (Containers), 9.3 (Shared/Merged SDF), and 9.5 (Interaction Illumination, surface-level) done; 9.2/9.4 not started, see below |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
@@ -626,11 +626,67 @@ interactive config mode without a specific reason to.
 
 ## Phase 9.2 — Shared Sampling Regions (not started)
 
-## Phase 9.3 — Shared / Merged SDF (not started)
+## Phase 9.3 — Shared / Merged SDF (done)
 
 The roadmap explicitly says not to require this before Phase 8's
-style-level work is complete — it now is, so this is unblocked, just not
-started.
+style-level work is complete — it now is, so this was unblocked.
+
+Two `GlassGroup` members close enough together now blend into one
+continuous shape (a smooth-min "metaball" merge) instead of rendering as
+two independent overlapping rectangles with a visible hard seam:
+
+- `GlassScene::merge_partner(surface)` (`src/glass.rs`): if `surface`
+  belongs to a group, finds its nearest *other* member and returns a 0..1
+  blend strength that fades in as they approach and out as they separate
+  (never snaps at a hard threshold) — approximated from center distance
+  minus each surface's average half-extent, which only needs to be good
+  enough to drive a smooth *strength*, not pixel-perfect collision.
+  Deliberately **only returns `Some` for the later-drawn (higher z-order)
+  member of a pair** — an earlier version had both members merge
+  symmetrically, so each independently rendered the *entire* union shape
+  and visually fought each other (the bottom one's rendering got mostly
+  overwritten by the top one's now-expanded coverage, producing two
+  differently-lit halves instead of one material). Since surfaces already
+  composite back-to-front, only the top one needs to extend its own
+  coverage over the seam.
+- `glass.frag`'s new `merged_sd_shape()` is a drop-in replacement for
+  every one of the file's 10 `sd_shape()` call sites (coverage, the
+  surface normal, the outline ring, the drop shadow, the inner-glow rim —
+  all of them, via one function, rather than each needing its own
+  merge-aware logic). At `u_merge = 0` (every surface's default — no group
+  or no close-enough neighbor) it returns exactly `sd_shape()` unchanged;
+  above that, it polynomial-smooth-mins (Inigo Quilez's formula, a fixed
+  40px blend radius) against a second shape's SDF, sampled at
+  `u_merge_center`/`u_merge_size`/`u_merge_radius`/`u_merge_smoothing`.
+- Both renderers widen the merging surface's draw quad to also cover the
+  merge partner's own padded rect — otherwise the blended shape (which can
+  extend well past the surface's own bounds) gets clipped at the original
+  quad edge.
+- `src/main.rs`'s `OverlappingPanels` demo now registers its two panels as
+  a real group, so dragging one toward/away from the other live-previews
+  the merge engaging and disengaging — the first real use of `add_group`
+  outside a unit test.
+
+**Verified:** 5 new unit tests (`merge_partner_*`) cover no-group,
+lone-member, far-apart, strength-increases-with-proximity, and
+nearest-of-several cases, including the "only the top member merges"
+behavior. All 9 visual regression goldens stayed at 0.0000-0.0002% RMSE —
+`examples/visual_regression.rs`'s own `overlapping_panels_bg2` scene
+never calls `add_group`, so this is inert there, proving the no-op case
+holds. Confirmed visually via `SPARK_GLASS_CAPTURE` on `main.rs`'s grouped
+`OverlappingPanels` demo: the two panels show a genuine smooth "metaball"
+notch instead of a hard rectangular seam, and — after the topmost-only
+fix above — both halves are visually consistent (same brightness/tint)
+rather than one looking like a flat, undampened rectangle.
+
+**Known limitation, honestly not fixed:** the seam isn't perfectly
+invisible. The bottom (non-merging) surface still computes its own
+independent edge highlights/outline along its original boundary, so where
+that boundary isn't fully covered by the top surface's extended coverage,
+a faint secondary edge response can show through near the seam. A fully
+seamless result would need both surfaces to cooperate (each suppressing
+its own edge effects along the shared boundary), which is real additional
+work, not done here.
 
 ## Phase 9.4 — Morphing (not started)
 

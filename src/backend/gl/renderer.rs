@@ -71,6 +71,11 @@ struct GlassProgram {
     adaptive_response: Loc,
     ambient_reflection: Loc,
     interaction: Loc,
+    merge: Loc,
+    merge_center: Loc,
+    merge_size: Loc,
+    merge_radius: Loc,
+    merge_smoothing: Loc,
     u_scene: Loc,
     u_scene_blur: Loc,
     u_stack_mask: Loc,
@@ -106,6 +111,11 @@ impl GlassProgram {
                 adaptive_response: loc(gl, program, "u_adaptive_response"),
                 ambient_reflection: loc(gl, program, "u_ambient_reflection"),
                 interaction: loc(gl, program, "u_interaction"),
+                merge: loc(gl, program, "u_merge"),
+                merge_center: loc(gl, program, "u_merge_center"),
+                merge_size: loc(gl, program, "u_merge_size"),
+                merge_radius: loc(gl, program, "u_merge_radius"),
+                merge_smoothing: loc(gl, program, "u_merge_smoothing"),
                 u_scene: loc(gl, program, "u_scene"),
                 u_scene_blur: loc(gl, program, "u_scene_blur"),
                 u_stack_mask: loc(gl, program, "u_stack_mask"),
@@ -348,7 +358,16 @@ impl GlGlassRenderer {
                 gl.disable(glow::BLEND);
                 self.copy(gl, current.texture, (0.0, 0.0, frame.x, frame.y), frame);
 
-                self.draw_surface(gl, surface, scene.quality, scene.reduced_transparency, current.texture, frame);
+                let merge = scene.merge_partner(surface);
+                self.draw_surface(
+                    gl,
+                    surface,
+                    scene.quality,
+                    scene.reduced_transparency,
+                    merge,
+                    current.texture,
+                    frame,
+                );
 
                 next_mask.bind(gl);
                 gl.clear_color(0.0, 0.0, 0.0, 1.0);
@@ -410,6 +429,7 @@ impl GlGlassRenderer {
         surface: &GlassSurface,
         quality: GlassQuality,
         reduced_transparency: bool,
+        merge: Option<(&GlassSurface, f32)>,
         scene_tex: glow::NativeTexture,
         frame: Vec2,
     ) {
@@ -449,8 +469,35 @@ impl GlGlassRenderer {
             gl.uniform_1_f32(self.glass.interaction.as_ref(), interaction_energy(surface.interaction));
             gl.uniform_2_f32(self.glass.ndc_size.as_ref(), frame.x, frame.y);
 
-            let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
-            let quad = geometry.size() + SHADOW_MARGIN * 2.0;
+            let (merge_strength, merge_center, merge_size, merge_radius, merge_smoothing) = match merge {
+                Some((partner, strength)) => (
+                    strength,
+                    partner.geometry.center(),
+                    partner.geometry.size(),
+                    partner.geometry.radius(),
+                    partner.geometry.smoothing(),
+                ),
+                None => (0.0, Vec2::ZERO, Vec2::ZERO, 0.0, 0.0),
+            };
+            gl.uniform_1_f32(self.glass.merge.as_ref(), merge_strength);
+            gl.uniform_2_f32(self.glass.merge_center.as_ref(), merge_center.x, merge_center.y);
+            gl.uniform_2_f32(self.glass.merge_size.as_ref(), merge_size.x, merge_size.y);
+            gl.uniform_1_f32(self.glass.merge_radius.as_ref(), merge_radius);
+            gl.uniform_1_f32(self.glass.merge_smoothing.as_ref(), merge_smoothing);
+
+            // See the macroquad renderer's draw_surface for why this widens
+            // to cover a merge partner's own padded rect too, not just this
+            // surface's — otherwise the blended shape gets clipped at this
+            // surface's original bounds.
+            let mut top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
+            let mut bottom_right = geometry.center() + geometry.size() * 0.5 + SHADOW_MARGIN;
+            if let Some((partner, _)) = merge {
+                let partner_tl = partner.geometry.center() - partner.geometry.size() * 0.5 - SHADOW_MARGIN;
+                let partner_br = partner.geometry.center() + partner.geometry.size() * 0.5 + SHADOW_MARGIN;
+                top_left = top_left.min(partner_tl);
+                bottom_right = bottom_right.max(partner_br);
+            }
+            let quad = bottom_right - top_left;
             gl.uniform_4_f32(self.glass.rect.as_ref(), top_left.x, top_left.y, quad.x, quad.y);
 
             gl.active_texture(glow::TEXTURE0);

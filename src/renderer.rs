@@ -105,6 +105,11 @@ impl MacroquadGlassRenderer {
                     UniformDesc::new("u_adaptive_response", UniformType::Float1),
                     UniformDesc::new("u_ambient_reflection", UniformType::Float1),
                     UniformDesc::new("u_interaction", UniformType::Float1),
+                    UniformDesc::new("u_merge", UniformType::Float1),
+                    UniformDesc::new("u_merge_center", UniformType::Float2),
+                    UniformDesc::new("u_merge_size", UniformType::Float2),
+                    UniformDesc::new("u_merge_radius", UniformType::Float1),
+                    UniformDesc::new("u_merge_smoothing", UniformType::Float1),
                 ],
                 textures: vec![
                     "u_scene".to_owned(),
@@ -206,7 +211,8 @@ impl MacroquadGlassRenderer {
             self.glass.set_texture("u_scene", current.texture.clone());
             self.glass
                 .set_texture("u_stack_mask", self.targets.mask_blur.texture.clone());
-            self.draw_surface(surface, scene.quality, scene.reduced_transparency);
+            let merge = scene.merge_partner(surface);
+            self.draw_surface(surface, scene.quality, scene.reduced_transparency, merge);
 
             set_target_camera(&next_mask);
             clear_background(BLACK);
@@ -227,6 +233,7 @@ impl MacroquadGlassRenderer {
         surface: &GlassSurface,
         quality: GlassQuality,
         reduced_transparency: bool,
+        merge: Option<(&GlassSurface, f32)>,
     ) {
         let geometry = surface.geometry;
         let frost = surface_frost(surface, quality, reduced_transparency);
@@ -277,9 +284,37 @@ impl MacroquadGlassRenderer {
             .set_uniform("u_ambient_reflection", surface.material.ambient_reflection);
         self.glass
             .set_uniform("u_interaction", interaction_energy(surface.interaction));
+        let (merge_strength, merge_center, merge_size, merge_radius, merge_smoothing) = match merge {
+            Some((partner, strength)) => (
+                strength,
+                partner.geometry.center(),
+                partner.geometry.size(),
+                partner.geometry.radius(),
+                partner.geometry.smoothing(),
+            ),
+            None => (0.0, Vec2::ZERO, Vec2::ZERO, 0.0, 0.0),
+        };
+        self.glass.set_uniform("u_merge", merge_strength);
+        self.glass.set_uniform("u_merge_center", merge_center);
+        self.glass.set_uniform("u_merge_size", merge_size);
+        self.glass.set_uniform("u_merge_radius", merge_radius);
+        self.glass.set_uniform("u_merge_smoothing", merge_smoothing);
         gl_use_material(&self.glass);
-        let top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
-        let quad = geometry.size() + SHADOW_MARGIN * 2.0;
+        // The draw quad normally only needs to cover this surface's own
+        // shadow margin — but a merged neighbor's glass can extend well
+        // outside that (see merge_partner's MERGE_START_DISTANCE), so
+        // widen the quad to also cover the neighbor's own padded rect
+        // whenever merging, or the blended shape would get clipped at
+        // this surface's original bounds.
+        let mut top_left = geometry.center() - geometry.size() * 0.5 - SHADOW_MARGIN;
+        let mut bottom_right = geometry.center() + geometry.size() * 0.5 + SHADOW_MARGIN;
+        if let Some((partner, _)) = merge {
+            let partner_tl = partner.geometry.center() - partner.geometry.size() * 0.5 - SHADOW_MARGIN;
+            let partner_br = partner.geometry.center() + partner.geometry.size() * 0.5 + SHADOW_MARGIN;
+            top_left = top_left.min(partner_tl);
+            bottom_right = bottom_right.max(partner_br);
+        }
+        let quad = bottom_right - top_left;
         draw_rectangle(top_left.x, top_left.y, quad.x, quad.y, WHITE);
         gl_use_default_material();
     }
