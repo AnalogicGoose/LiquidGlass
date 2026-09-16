@@ -103,6 +103,7 @@ impl MacroquadGlassRenderer {
                     UniformDesc::new("u_contrast", UniformType::Float1),
                     UniformDesc::new("u_clear_dimming", UniformType::Float1),
                     UniformDesc::new("u_adaptive_response", UniformType::Float1),
+                    UniformDesc::new("u_ambient_reflection", UniformType::Float1),
                     UniformDesc::new("u_interaction", UniformType::Float1),
                 ],
                 textures: vec![
@@ -272,6 +273,8 @@ impl MacroquadGlassRenderer {
             .set_uniform("u_clear_dimming", surface.material.clear_dimming);
         self.glass
             .set_uniform("u_adaptive_response", surface.material.adaptive_response);
+        self.glass
+            .set_uniform("u_ambient_reflection", surface.material.ambient_reflection);
         self.glass
             .set_uniform("u_interaction", interaction_energy(surface.interaction));
         gl_use_material(&self.glass);

@@ -78,6 +78,16 @@ pub struct GlassMaterial {
     /// most) — see 8.7's "busy backgrounds may require stronger
     /// separation". `0.0` (the `preset()` default) is a no-op.
     pub adaptive_response: f32,
+    /// Roadmap Phase 8.5 "Adaptive Material Response" — the "backdrop
+    /// color characteristics" input specifically: how much the rim glow's
+    /// color comes from the backdrop just outside the glass edge, instead
+    /// of always being a fixed light/dark constant. `0.0` (the `preset()`
+    /// default) keeps the original fixed-color rim exactly as before —
+    /// real Apple Liquid Glass (see the Apple Music reference screenshots
+    /// in `docs/references/apple-liquid-glass/`) visibly picks up color
+    /// from nearby content (e.g. album art) at its edge; this is what lets
+    /// a product opt into that per style instead of getting it globally.
+    pub ambient_reflection: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -354,6 +364,7 @@ pub fn preset(style: GlassStyle, dark_tint: bool) -> (GlassMaterial, GlassOptics
             contrast: 1.0,
             clear_dimming: 0.0,
             adaptive_response: 0.0,
+            ambient_reflection: 0.0,
         },
         GlassOptics {
             refraction_strength: 2.0,
@@ -410,6 +421,7 @@ mod tests {
             assert_eq!(material.contrast, 1.0, "{style:?}");
             assert_eq!(material.clear_dimming, 0.0, "{style:?}");
             assert_eq!(material.adaptive_response, 0.0, "{style:?}");
+            assert_eq!(material.ambient_reflection, 0.0, "{style:?}");
         }
     }
 

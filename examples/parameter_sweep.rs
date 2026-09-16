@@ -151,6 +151,15 @@ const SWEEPS: &[Sweep] = &[
         values: &[0.0, 0.25, 0.5, 0.75, 1.0],
         apply: |material, _optics, v| material.adaptive_response = v,
     },
+    Sweep {
+        parameter: "ambient_reflection",
+        // Phase 8.5's "backdrop color characteristics" input: 0 is every
+        // shipped preset's default (a fixed rim color). Rendered over
+        // assets/image1.jpg's orange/blue photo, so a reviewer can see the
+        // rim visibly pick up that color as this goes toward 1.
+        values: &[0.0, 0.25, 0.5, 0.75, 1.0],
+        apply: |material, _optics, v| material.ambient_reflection = v,
+    },
 ];
 
 fn main() {

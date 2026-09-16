@@ -69,6 +69,7 @@ struct GlassProgram {
     contrast: Loc,
     clear_dimming: Loc,
     adaptive_response: Loc,
+    ambient_reflection: Loc,
     interaction: Loc,
     u_scene: Loc,
     u_scene_blur: Loc,
@@ -103,6 +104,7 @@ impl GlassProgram {
                 contrast: loc(gl, program, "u_contrast"),
                 clear_dimming: loc(gl, program, "u_clear_dimming"),
                 adaptive_response: loc(gl, program, "u_adaptive_response"),
+                ambient_reflection: loc(gl, program, "u_ambient_reflection"),
                 interaction: loc(gl, program, "u_interaction"),
                 u_scene: loc(gl, program, "u_scene"),
                 u_scene_blur: loc(gl, program, "u_scene_blur"),
@@ -443,6 +445,7 @@ impl GlGlassRenderer {
             gl.uniform_1_f32(self.glass.contrast.as_ref(), surface.material.contrast);
             gl.uniform_1_f32(self.glass.clear_dimming.as_ref(), surface.material.clear_dimming);
             gl.uniform_1_f32(self.glass.adaptive_response.as_ref(), surface.material.adaptive_response);
+            gl.uniform_1_f32(self.glass.ambient_reflection.as_ref(), surface.material.ambient_reflection);
             gl.uniform_1_f32(self.glass.interaction.as_ref(), interaction_energy(surface.interaction));
             gl.uniform_2_f32(self.glass.ndc_size.as_ref(), frame.x, frame.y);
 

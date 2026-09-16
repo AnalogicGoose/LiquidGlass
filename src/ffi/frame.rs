@@ -93,6 +93,7 @@ fn element_to_surface(element: &SGGlassElement) -> GlassSurface {
             contrast: 1.0,
             clear_dimming: 0.0,
             adaptive_response: 0.0,
+            ambient_reflection: 0.0,
         },
         optics: GlassOptics {
             refraction_strength: element.refraction_strength,

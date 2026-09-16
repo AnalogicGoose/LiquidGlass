@@ -397,6 +397,29 @@ yet — same "tooling built, calibration is a human decision" situation as
 8.2 originally was. The `adaptive_response` sweep exists for whoever does
 that next.
 
+### Extension: ambient reflection (the "backdrop color characteristics" input)
+
+Prompted by a direct comparison against
+`docs/references/apple-liquid-glass/`: real Liquid Glass visibly picks up
+color from whatever's just outside its edge (album art next to the glass,
+for instance), not just a fixed light/dark rim — the one input the
+original Phase 8.5 pass above didn't touch. Added
+`GlassMaterial.ambient_reflection` (`0.0` in every `preset()`, a no-op) and
+changed `glass.frag`'s inner-glow rim term to sample `u_scene_blur` pushed
+outward along the pixel's own surface normal (`n2`, already computed for
+the refraction/lighting terms above it — no new geometry), scaled down to
+roughly the fixed constants' own magnitude (~0.1-0.16) so the blend between
+"fixed rim" and "colored by whatever's nearby" is smooth rather than
+suddenly overpowering the existing look.
+
+**Verified:** goldens still 0.0000%-0.0002% RMSE (inert at `0.0`).
+`examples/parameter_sweep.rs` gained an `ambient_reflection` sweep;
+`0` → `1` measured ~0.17% RMSE, and a cropped comparison of the panel's top
+edge (against blue sky in `assets/image1.jpg`) visibly shifts from the
+fixed warm rim color toward blue at `1.0` — small but real, same
+"infrastructure done, default is a human decision" status as the rest of
+8.5.
+
 ## Phase 8.6 — Surface Response (done, via existing architecture)
 
 The roadmap wants the highlight system to be more than "a 1px white
