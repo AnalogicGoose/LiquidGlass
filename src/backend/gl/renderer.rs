@@ -265,6 +265,8 @@ impl GlGlassRenderer {
     /// equivalent to `main.rs::draw_cover` in the Macroquad reference.
     pub fn draw_backdrop(&self, gl: &glow::Context, background: glow::NativeTexture, tex_size: Vec2) {
         unsafe {
+            let host_framebuffer = current_framebuffer(gl);
+
             self.targets.sharp.bind(gl);
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT);
@@ -276,6 +278,10 @@ impl GlGlassRenderer {
             let origin = (frame - size) * 0.5;
 
             self.copy(gl, background, (origin.x, origin.y, size.x, size.y), frame);
+
+            // Leave the framebuffer binding exactly as the host left it —
+            // this call must not be visible to whatever the host does next.
+            bind_raw_framebuffer(gl, host_framebuffer);
         }
     }
 
@@ -283,6 +289,7 @@ impl GlGlassRenderer {
     /// scene. Mirrors `MacroquadGlassRenderer::render` pass-for-pass.
     pub fn render(&mut self, gl: &glow::Context, scene: &GlassScene) {
         unsafe {
+            let host_framebuffer = current_framebuffer(gl);
             let frame = Vec2::new(self.width as f32, self.height as f32);
 
             self.targets.stack_a.bind(gl);
@@ -346,6 +353,18 @@ impl GlGlassRenderer {
             gl.clear(glow::COLOR_BUFFER_BIT);
             gl.disable(glow::BLEND);
             self.copy(gl, current.texture, (0.0, 0.0, frame.x, frame.y), frame);
+
+            // Restore exactly what was bound when this call started. Without
+            // this, `present()` — which trusts "whatever is currently bound
+            // is the host's target" — would silently draw into our own
+            // internal `output` target instead of the host's real
+            // framebuffer, since that's what this function leaves bound.
+            // (This was a real bug: every example's on-screen output was
+            // broken by it even though a same-process glReadPixels capture
+            // right after `present()` looked byte-correct, because that
+            // capture was reading `output` back, not the host's actual
+            // framebuffer.)
+            bind_raw_framebuffer(gl, host_framebuffer);
         }
     }
 
@@ -501,6 +520,19 @@ impl GlGlassRenderer {
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
         }
     }
+}
+
+/// Reads the currently bound `GL_DRAW_FRAMEBUFFER`. `0` means the default
+/// framebuffer (glow represents that as `None`, not `NativeFramebuffer`).
+unsafe fn current_framebuffer(gl: &glow::Context) -> i32 {
+    unsafe { gl.get_parameter_i32(glow::DRAW_FRAMEBUFFER_BINDING) }
+}
+
+/// Inverse of [`current_framebuffer`] — rebinds a raw framebuffer id
+/// previously read from it, including the `0` (default framebuffer) case.
+unsafe fn bind_raw_framebuffer(gl: &glow::Context, raw: i32) {
+    let framebuffer = std::num::NonZeroU32::new(raw as u32).map(glow::NativeFramebuffer);
+    unsafe { gl.bind_framebuffer(glow::FRAMEBUFFER, framebuffer) };
 }
 
 fn surface_frost(surface: &GlassSurface, quality: GlassQuality, reduced_transparency: bool) -> f32 {

@@ -430,9 +430,14 @@ section's contract. GL function addresses are resolved via `eglGetProcAddress`
 normally use for this is currently unusable — its `gl_generator` dependency
 requires a yanked `xml-rs` release with no fixed version available). Captured
 output is byte-identical to `examples/sandbox.rs` and `examples/ffi_smoke.rs`.
-Not yet exercised: native GTK controls actually composited around/over the
-glass surface, and the GLX fallback path for X11 sessions (only EGL is wired
-up, since Wayland is what this was validated on).
+Native controls composited over the glass surface are now exercised too —
+see `examples/gtk_glarea_overlay.rs` and the "OpenGL State Isolation" note
+under "Still Open" below. Not yet exercised: the GLX fallback path for X11
+sessions (only EGL is wired up, since Wayland is what this was validated on).
+
+A real correctness bug was found and fixed here during verification: see the
+"Render Target Contract" note under "Still Open" for what went wrong and why
+a same-process pixel readback didn't catch it.
 
 ---
 
@@ -916,6 +921,24 @@ Should LiquidGlass:
 - create its own output texture;
 - support multiple target modes?
 
+**Status:** option A ("current framebuffer") is what `GlGlassRenderer::present`
+implements today. This had a real bug until it was found and fixed: `render()`
+left its own internal `output` framebuffer bound when it returned, so
+`present()` — which trusts "whatever is bound is the host's target" — was
+silently drawing into that internal target instead of the host's actual
+framebuffer. Every example's on-screen output was affected, invisibly: a
+same-process `glReadPixels` capture taken right after `present()` still read
+back correct pixels (because it was reading `output` right back, not the
+host's real target), which is why it went unnoticed until an actual live
+screenshot of a running window showed a blank result. Fixed by having
+`draw_backdrop`/`render` snapshot `GL_DRAW_FRAMEBUFFER_BINDING` on entry and
+restore it before returning, so `present()`'s existing "draw into whatever's
+current" logic is actually correct. Verified with real screen captures (not
+just `glReadPixels`) on `examples/sandbox.rs` and `examples/gtk_glarea.rs`
+after the fix. Lesson for future work here: a readback taken from inside the
+same render call cannot tell you whether the *host* actually received the
+frame — only an external capture (or the host's own screen) can.
+
 ### OpenGL State Isolation
 
 Should LiquidGlass:
@@ -926,6 +949,20 @@ Should LiquidGlass:
 - require the host adapter to restore state?
 
 This must be decided using real performance measurements.
+
+**Status:** partial empirical evidence from `examples/gtk_glarea_overlay.rs`,
+which puts real native GTK widgets (`Button`, `Switch`, `Label`) in a
+`gtk::Overlay` on top of the same `GLArea`, so GTK's own GSK-based widget
+rendering runs immediately after ours on every frame. With **no** GL state
+save/restore on SparkGlass's side beyond the framebuffer-binding fix above
+(VAO, active program, blend state, and texture units are all left however the
+last draw call set them), the native widgets rendered perfectly — crisp, no
+artifacts — in a live screen capture. This is evidence that GTK4's renderer
+does not depend on inherited GL state and re-establishes whatever it needs
+before drawing, at least for this state footprint and this driver/Mesa stack.
+Not evidence for WinUI, nor for a larger state footprint (e.g. depth/stencil
+tests, scissor) than this renderer currently touches — treat this as one data
+point, not a closed question.
 
 ### Backdrop Scope
 
