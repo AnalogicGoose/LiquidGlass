@@ -15,11 +15,38 @@
 | 6 | Windows (WinUI 3 + ANGLE) integration | **Paused, deliberately** — Linux-only focus for now per explicit team decision. GitHub Actions CI was removed; see below for what it did prove before being scrapped |
 | 7 | GoosicReborn integration | Not started |
 | 8 | Apple Material Fidelity | **Done** — 8.1–8.9 all addressed, see below (8.5/8.8's new knobs are shipped infrastructure, not yet product-tuned beyond "off") |
-| 9 | Container interaction + motion | **Started** — 9.1 (Containers), 9.3 (Shared/Merged SDF), and 9.5 (Interaction Illumination, surface-level) done; 9.2/9.4 not started, see below |
+| 9 | Container interaction + motion | **Started** — 9.1 (Containers) and 9.5 (Interaction Illumination, surface-level) done; 9.3 (Shared/Merged SDF) working but **WIP, not 100% finished** (visible seam remains — see "Work in Progress" below); 9.2/9.4 not started |
 | 10 | Performance architecture | Not started (roadmap says this waits until material behavior is correct enough to measure meaningfully) |
 | 11 | Vulkan / future backend investigation | Not started (explicitly not the current target) |
 
 Everything below is either implemented-and-verified or an explicit gap — nothing here is aspirational. If it doesn't have a "Status" note, it hasn't been built.
+
+## Work in Progress
+
+Everything in this list is real and working, but not finished — called out
+here specifically so "it renders" doesn't get read as "it's done." See each
+phase's own section below for full detail.
+
+- **Phase 9.3 — Shared/Merged SDF.** Two grouped glass surfaces genuinely
+  smooth-blend into one shape now (confirmed visually, not just in
+  theory), but **the team's own read is that this isn't 100% finished**:
+  the seam isn't perfectly invisible. Only the topmost surface of a
+  merging pair actually merges; the bottom one still renders its own
+  independent edge highlights along its original boundary, so a faint
+  secondary edge response can show through near the seam. Full
+  seamlessness needs both surfaces to cooperate — not done.
+- **Phase 6 — Windows integration.** Paused by explicit team decision
+  (Linux-only focus for now). The WinUI 3 + `SwapChainPanel` scaffold in
+  `platform/windows/` has never been built or run against real Windows.
+- **Phase 8.5/8.8 knobs.** `clear_dimming`, `adaptive_response`, and
+  `ambient_reflection` all work and are exposed as live sliders in
+  `cargo run`'s config panel, but no shipped preset (Clear/White
+  tint/Black tint) uses a non-zero value for any of them yet — that's a
+  deliberate human decision, not an oversight.
+- **Phase 9.2 (Shared Sampling Regions) and 9.4 (Morphing)** — not started
+  at all, not even scaffolded.
+- **Phase 7 (GoosicReborn integration)** — not started, blocked on access
+  to that codebase.
 
 ---
 
@@ -626,7 +653,7 @@ interactive config mode without a specific reason to.
 
 ## Phase 9.2 — Shared Sampling Regions (not started)
 
-## Phase 9.3 — Shared / Merged SDF (done)
+## Phase 9.3 — Shared / Merged SDF (working, WIP — see "Work in Progress" above)
 
 The roadmap explicitly says not to require this before Phase 8's
 style-level work is complete — it now is, so this was unblocked.

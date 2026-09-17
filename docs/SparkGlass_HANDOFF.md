@@ -6,6 +6,18 @@
 > prior session ended and you're continuing cold, or it's still running and
 > this is just the latest checkpoint — check git log to see which.
 
+## Work in Progress — read this before claiming anything below is "done"
+
+`docs/SparkGlass_IMPLEMENTATION_STATUS.md` has a "Work in Progress"
+section right after its summary table — check it first. Short version as
+of this writing: **Phase 9.3 (Shared/Merged SDF) is real and working, but
+the team's own explicit read is that it's not 100% finished** — the merge
+seam isn't perfectly invisible (only the topmost surface of a pair
+actually merges; the bottom one's own edge highlights can still faintly
+show through near the boundary). Phase 6 (Windows) is paused, not done.
+Phase 8.5/8.8's knobs work but ship at `0` on every preset. Phase 9.2/9.4
+and Phase 7 haven't been started at all.
+
 ## Where things actually stand
 
 Read `docs/SparkGlass_IMPLEMENTATION_STATUS.md` first — it's the living
@@ -21,13 +33,17 @@ against the compiled `.so` — render byte-identical output. Phase 8 (Apple
 Material Fidelity) is fully addressed — see
 `SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 8.1–8.9 sections. Phase 9 is
 **started**: 9.1 (containers, `GlassGroup` is no longer dead data) and 9.5
-(interaction glow) are done; 9.2/9.3/9.4 are not. Phase 6 (Windows) is
-**started, not finished**: GitHub Actions `windows-latest` CI (no Windows
-dev machine exists here) proves the C ABI and GL/ANGLE rendering pipeline
-work on real Windows, but the actual WinUI 3 + `SwapChainPanel` product
-integration is still an unverified scaffold in `platform/windows/` — see
-that directory's own README for exactly what's uncertain. Phase 7
-(GoosicReborn integration) hasn't started at all; it's blocked on having
+(interaction glow) are done; 9.3 (Shared/Merged SDF) is real and working
+but explicitly **WIP, not finished** (see the section right above this
+one); 9.2/9.4 haven't been started at all. Phase 6 (Windows) is
+**paused, by explicit team decision** — Linux-only focus for now. The
+GitHub Actions Windows CI that used to verify it has been removed; while
+it existed it proved the C ABI and Rust build sound on real Windows but
+never got the ANGLE-linked smoke test past a `STATUS_DLL_NOT_FOUND`
+crash, and the WinUI 3 + `SwapChainPanel` product integration remains an
+unverified scaffold in `platform/windows/` — see that directory's own
+README for exactly what's uncertain. Phase 7 (GoosicReborn integration)
+hasn't started at all; it's blocked on having
 access to that codebase.
 
 `src/main.rs` (`cargo run`) also went through a full UI rework this
@@ -166,22 +182,20 @@ not improvising an answer solo.
 
 ## Suggested next steps, roughly in priority order
 
-1. **Nothing is currently broken** — the last commit (`221272e` as of this
+1. **Nothing is currently broken** — the last commit (`539f4ee` as of this
    writing) left everything building clean and passing every regression
    check described in `SparkGlass_IMPLEMENTATION_STATUS.md`, including all
    three windowed backends. Safe to pick up from any angle below.
    `scripts/visual_regression.sh` and `scripts/verify_backends.sh` both
    pass; run them after any shader or renderer change before trusting it.
-   The Windows CI workflow's `c-abi-smoke` job is still red as of this
-   writing — `c_smoke.exe` crashes with the same exit code
-   (`-1073741515` / `STATUS_DLL_NOT_FOUND`) both before and after copying
-   `d3dcompiler_47.dll` next to it, so that wasn't the (whole) answer.
-   `native-build-and-test` (the other job) is green. Next step, not yet
-   done: `dumpbin /dependents` was only ever run on `c_smoke.exe` and
-   `spark_glass.dll` — never on `libEGL.dll`/`libGLESv2.dll` themselves,
-   which is where ANGLE's own missing transitive dependency would
-   actually show up. Check those two directly before guessing at another
-   DLL to copy.
+   Read the "Work in Progress" section at the top of both this file and
+   `SparkGlass_IMPLEMENTATION_STATUS.md` before assuming anything below is
+   fully finished — Phase 9.3 in particular renders correctly but is
+   explicitly not done. Windows CI no longer exists (scrapped, see item 7)
+   — if Phase 6 picks back up, the unresolved `c_smoke.exe`
+   `STATUS_DLL_NOT_FOUND` crash and its next diagnostic step
+   (`dumpbin /dependents` on `libEGL.dll`/`libGLESv2.dll` themselves,
+   never done) are recorded in that item.
 2. **`docs/SparkGlass_ROADMAP.md`'s Phase 8 (Apple Material Fidelity) is
    now fully addressed** — see `SparkGlass_IMPLEMENTATION_STATUS.md`'s
    Phase 8.1–8.9 sections for the detail per sub-phase. Short version: 8.1
@@ -247,26 +261,33 @@ not improvising an answer solo.
    popups, scrolling) still composites cleanly, and eventually whether
    anything on the WinUI side has a similar concern once that platform is
    reachable. The roadmap is explicit: don't freeze this from one GTK test.
-7. **Phase 6 (Windows) — what's left specifically.** CI now covers: native
-   MSVC build + unit tests + C-ABI export check
-   (`native-build-and-test`), and building/linking/running `c_smoke.exe`
-   against the cdylib through real ANGLE (`c-abi-smoke`). What's NOT
-   covered and needs an actual Windows machine + Visual Studio: everything
-   in `platform/windows/` (the WinUI 3 `SwapChainPanel` + ANGLE host
-   scaffold) — it has never been compiled, only reviewed. That
-   directory's own README lists exactly what's uncertain (mainly the EGL
+7. **Phase 6 (Windows) — paused, what's left if it picks back up.** The
+   now-removed CI covered: native MSVC build + unit tests + C-ABI export
+   check (`native-build-and-test` — this one was green), and
+   building/linking/running `c_smoke.exe` against the cdylib through real
+   ANGLE (`c-abi-smoke` — never got past `c_smoke.exe` crashing with
+   `STATUS_DLL_NOT_FOUND`; copying `d3dcompiler_47.dll` didn't fully fix
+   it, and `dumpbin /dependents` on `libEGL.dll`/`libGLESv2.dll`
+   themselves — the likely place ANGLE's real missing transitive
+   dependency would show up — was never actually done before the workflow
+   was scrapped). Separately, and regardless of that CI question:
+   everything in `platform/windows/` (the WinUI 3 `SwapChainPanel` + ANGLE
+   host scaffold) has never been compiled, only reviewed. That directory's
+   own README lists exactly what's uncertain (mainly the EGL
    `SwapChainPanel` native-window property-set keys, an ANGLE-internal,
    version-sensitive contract). Don't mark Phase 6 "done" until that
-   scaffold actually builds and produces a real screenshot.
+   scaffold actually builds and produces a real screenshot on an actual
+   Windows machine.
 8. **Phase 9 — what's left specifically.** 9.1 (Explicit Glass Containers:
    `GlassScene::add_group`/`group_surfaces`/`bring_group_to_front`/
-   `apply_group_style`), 9.3 (Shared/Merged SDF: `merge_partner()` +
-   `glass.frag`'s `merged_sd_shape()` — two close `GlassGroup` members
-   smooth-blend into one shape, live-previewable by dragging the panels in
-   `main.rs`'s `OverlappingPanels` demo), and 9.5 (Interaction
-   Illumination: `u_interaction` in `glass.frag`, driven by
-   `interaction_energy()`) are done and tested. 9.3 has a known, documented
-   limitation: only the topmost surface of a merging pair actually merges
+   `apply_group_style`) and 9.5 (Interaction Illumination: `u_interaction`
+   in `glass.frag`, driven by `interaction_energy()`) are done and tested.
+   9.3 (Shared/Merged SDF: `merge_partner()` + `glass.frag`'s
+   `merged_sd_shape()` — two close `GlassGroup` members smooth-blend into
+   one shape, live-previewable by dragging the panels in `main.rs`'s
+   `OverlappingPanels` demo) is **working but explicitly WIP, not
+   done** — see the "Work in Progress" section above. Known limitation:
+   only the topmost surface of a merging pair actually merges
    (both merging symmetrically was tried first and looked wrong — see
    `SparkGlass_IMPLEMENTATION_STATUS.md`'s Phase 9.3 section), so the seam
    isn't perfectly invisible — the bottom surface's own edge highlights can
